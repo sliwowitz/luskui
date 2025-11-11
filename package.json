@@ -1,0 +1,9 @@
+{
+  "name": "codexui-sdk",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "express": "^4.19.2",
+    "@openai/codex-sdk": "^0.57.0"
+  }
+}

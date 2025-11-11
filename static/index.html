@@ -1,0 +1,322 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Codex UI (SDK)</title>
+  <style>
+    html,body{height:100%} body{margin:0;display:flex;font-family:system-ui,sans-serif}
+    #files{width:280px;border-right:1px solid #ddd;overflow:auto;padding:8px}
+    #main{flex:1;display:flex;flex-direction:column}
+    #toolbar{display:flex;gap:12px;border-bottom:1px solid #ddd;padding:8px;align-items:flex-start;flex-wrap:wrap}
+    #toolbar .inline-field{display:flex;flex-direction:column;gap:2px;font-size:12px;color:#555}
+    #toolbar select{min-width:180px;padding:6px 8px;border-radius:6px;border:1px solid #ccc;background:#fff;font-size:14px}
+    #toolbar select:disabled{opacity:.6}
+    #tabs{display:flex;gap:8px;border-bottom:1px solid #eee;padding:6px 8px}
+    .tab{padding:6px 10px;border-radius:999px;border:1px solid #ddd;cursor:pointer}
+    .tab.active{background:#f2f2f2}
+    #panes{flex:1;position:relative}
+    .pane{position:absolute;inset:0;overflow:auto;padding:12px;display:none}
+    .pane.active{display:block}
+    .bubble{max-width:980px;margin:10px 0;padding:10px;border-radius:8px;border:1px solid #eee;background:#fff}
+    .user{background:#e8f0ff;border-color:#c8d8ff}
+    .codex{background:#fff;border-color:#e6e6e6}
+    .thinking details{background:#fcfcfc;border:1px dashed #ccc;border-radius:6px;padding:8px}
+    .thinking summary{cursor:pointer;color:#666}
+    pre{overflow:auto;background:#f5f5f5;padding:8px;border-radius:6px}
+    code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace}
+    #input{display:flex;border-top:1px solid #ddd}
+    #input textarea{flex:1;padding:8px;border:0;resize:vertical;min-height:56px}
+    #input button{padding:8px 14px;border:0;border-left:1px solid #ddd;cursor:pointer}
+    #status{color:#666}
+    .cmd{font-family:ui-monospace; background:#f7f7f7; border:1px solid #ececec; padding:6px 8px; border-radius:6px; margin:6px 0}
+  </style>
+</head>
+<body>
+  <div id="files">
+    <div><strong>Repo</strong></div>
+    <div id="tree"></div>
+  </div>
+  <div id="main">
+    <div id="toolbar">
+      <button onclick="applyDiff()">Apply Last Diff</button>
+      <label class="inline-field">
+        <span>Model</span>
+        <select id="modelSelect" disabled>
+          <option>Loading…</option>
+        </select>
+      </label>
+      <label class="inline-field">
+        <span>Effort</span>
+        <select id="effortSelect" disabled>
+          <option>Loading…</option>
+        </select>
+      </label>
+      <span id="status">Ready</span>
+    </div>
+    <div id="tabs">
+      <div class="tab active" data-pane="chat">Chat</div>
+      <div class="tab" data-pane="commands">Commands</div>
+      <div class="tab" data-pane="diffs">Diffs</div>
+    </div>
+    <div id="panes">
+      <div id="chat" class="pane active"></div>
+      <div id="commands" class="pane"></div>
+      <div id="diffs" class="pane"></div>
+    </div>
+    <div id="input">
+      <textarea id="box" placeholder="Ask Codex… (Ctrl+Enter to send)"></textarea>
+      <button id="send">Send</button>
+    </div>
+  </div>
+
+  <script src="/static/marked.min.js"></script>
+  <script>
+    // --- tabs ---
+    document.querySelectorAll('.tab').forEach(t=>{
+      t.onclick=()=>{
+        document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+        document.querySelectorAll('.pane').forEach(x=>x.classList.remove('active'));
+        t.classList.add('active');
+        document.getElementById(t.dataset.pane).classList.add('active');
+      };
+    });
+
+    const chat = document.getElementById('chat');
+    const cmds = document.getElementById('commands');
+    const diffs = document.getElementById('diffs');
+    const statusEl = document.getElementById('status');
+    const modelSelect = document.getElementById('modelSelect');
+    const effortSelect = document.getElementById('effortSelect');
+    function setStatus(s){ statusEl.textContent=s; }
+    function mdToHtml(md){ try { return marked.parse(md); } catch{ return md; } }
+
+    function bubble(role, html, markdown=true){
+      const div = document.createElement('div');
+      div.className = `bubble ${role}`;
+      if(role==='thinking'){
+        const details = document.createElement('details'); details.open=false;
+        const summary = document.createElement('summary'); summary.textContent='thinking';
+        const content = document.createElement('div'); content.innerHTML = markdown? mdToHtml(html) : html;
+        details.appendChild(summary); details.appendChild(content); div.appendChild(details);
+      } else if (role==='user'){
+        div.classList.add('user'); div.textContent = html;
+      } else {
+        div.classList.add('codex'); div.innerHTML = markdown? mdToHtml(html) : html;
+      }
+      chat.appendChild(div); chat.scrollTop = chat.scrollHeight;
+    }
+
+    let runId = null;
+    let es = null;
+    let buf = "";        // current answer buffer
+    let thinkBuf = "";   // current thinking buffer
+    const settingsState = {
+      model: null,
+      defaultModel: null,
+      effort: null,
+      defaultEffort: null,
+      availableModels: [],
+      effortOptions: []
+    };
+    const CUSTOM_MODEL_VALUE = "__custom__";
+
+    function flush(){
+      if (thinkBuf.trim()){ bubble('thinking', thinkBuf, true); thinkBuf=''; }
+      if (buf.trim()){ bubble('codex', buf, true); buf=''; }
+    }
+
+    function startStream(){
+      if (es) es.close();
+      es = new EventSource(`/api/stream/${runId}`);
+      es.onmessage = ev => {
+        if (!ev.data) return;
+        const evObj = JSON.parse(ev.data);
+
+        switch (evObj.type) {
+          case 'thinking':
+            // accumulate markdown thoughts
+            thinkBuf += (thinkBuf ? '\n' : '') + (evObj.text || evObj.md || '');
+            break;
+          case 'message':
+            // final answer / tokens
+            buf += (buf ? '\n' : '') + (evObj.text || evObj.md || '');
+            break;
+          case 'tool.start':
+            // show tool name/args immediately
+            cmds.appendChild(Object.assign(document.createElement('div'),{
+              className:'cmd', textContent:`$ ${evObj.tool?.name || 'tool'} ${(evObj.tool?.args||[]).join(' ')}`}));
+            cmds.scrollTop = cmds.scrollHeight;
+            break;
+          case 'tool.stdout':
+          case 'tool.stderr':
+            cmds.appendChild(Object.assign(document.createElement('div'),{
+              className:'cmd', textContent:(evObj.text||'').toString()}));
+            cmds.scrollTop = cmds.scrollHeight;
+            break;
+          case 'diff':
+            diffs.innerHTML='';
+            const pre = document.createElement('pre'); pre.textContent = evObj.diff?.patch || '';
+            diffs.appendChild(pre);
+            break;
+          case 'status':
+            setStatus(evObj.text || evObj.state || 'Working…'); break;
+          case 'done':
+            flush(); setStatus('Idle'); break;
+          case 'error':
+            flush(); setStatus('Error'); break;
+        }
+      };
+      es.onerror = () => { es && es.close(); setStatus('Stream closed'); flush(); };
+    }
+
+    // send
+    function appendUser(s){ bubble('user', s, false); }
+    async function send(){
+      const text = document.getElementById('box').value.trim();
+      if(!text) return;
+      document.getElementById('box').value='';
+      appendUser(text); setStatus('Sending…'); flush(); cmds.innerHTML=''; // clear per-turn cmds
+      const r = await fetch('/api/send',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text})});
+      const js = await r.json(); runId = js.runId; setStatus('Streaming…'); startStream();
+    }
+    document.getElementById('send').onclick = send;
+    document.getElementById('box').addEventListener('keydown', (e)=>{
+      if ((e.key==='Enter') && (e.ctrlKey||e.metaKey)) { send(); e.preventDefault(); }
+    });
+
+    // apply last diff (SDK or CLI fallback)
+    async function applyDiff(){
+      if (!runId) return;
+      setStatus('Applying diff…');
+      const resp = await fetch(`/api/apply/${runId}`, {method:'POST'}).then(r=>r.json());
+      setStatus(resp.ok ? 'Applied' : 'Apply failed');
+      bubble('codex', '```\n'+(resp.output||'')+'\n```', true);
+    }
+
+    // file tree (same as before, omitted for brevity) – you can reuse your existing code
+    async function renderDir(path=""){
+      const res = await fetch(`/api/list?path=${encodeURIComponent(path)}`).catch(()=>null);
+      if(!res) return;
+      const js = await res.json();
+      const root = document.getElementById('tree');
+      if (path==="") root.innerHTML="";
+      const here = document.createElement('div'); here.textContent = (path? '/'+path : '/'); root.appendChild(here);
+      (js.entries||[]).forEach(e=>{
+        const row=document.createElement('div'); row.className='row';
+        row.textContent=(e.dir?'📁 ':'📄 ')+e.name;
+        row.onclick=()=>{ const p=(path? path+'/' : '')+e.name; if (e.dir) renderDir(p); else openFile(p); };
+        root.appendChild(row);
+      });
+    }
+    async function openFile(p){
+      const res = await fetch(`/api/read?path=${encodeURIComponent(p)}`).then(r=>r.json());
+      const txt = prompt(`Edit ${p}`, res.content ?? '');
+      if (txt != null) await fetch('/api/save',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({path:p,content:txt})});
+    }
+    renderDir();
+    function toTitleCase(str){
+      return str ? str.charAt(0).toUpperCase() + str.slice(1) : str;
+    }
+
+    function renderModelSelect(){
+      const select = modelSelect;
+      select.innerHTML = '';
+      const autoLabel = settingsState.defaultModel ? `Auto (${settingsState.defaultModel})` : 'Auto (config)';
+      select.appendChild(new Option(autoLabel, ''));
+      settingsState.availableModels.forEach(model=>{
+        select.appendChild(new Option(model, model));
+      });
+      if (settingsState.model && !settingsState.availableModels.includes(settingsState.model)){
+        select.appendChild(new Option(`${settingsState.model} (custom)`, settingsState.model));
+      }
+      select.appendChild(new Option('Custom…', CUSTOM_MODEL_VALUE));
+      select.value = settingsState.model || '';
+      select.disabled = false;
+    }
+
+    function renderEffortSelect(){
+      const select = effortSelect;
+      const options = settingsState.effortOptions?.length ? settingsState.effortOptions : ["minimal","low","medium","high"];
+      select.innerHTML = '';
+      const autoLabel = settingsState.defaultEffort ? `Auto (${settingsState.defaultEffort})` : 'Auto (config)';
+      select.appendChild(new Option(autoLabel, ''));
+      options.forEach(opt=>{
+        select.appendChild(new Option(toTitleCase(opt), opt));
+      });
+      select.value = settingsState.effort || '';
+      select.disabled = false;
+    }
+
+    function applySettings(data){
+      settingsState.model = data.model || null;
+      settingsState.defaultModel = data.defaultModel || null;
+      settingsState.effort = data.effort || null;
+      settingsState.defaultEffort = data.defaultEffort || null;
+      settingsState.availableModels = Array.isArray(data.availableModels) ? data.availableModels : [];
+      settingsState.effortOptions = Array.isArray(data.effortOptions) ? data.effortOptions : [];
+      renderModelSelect();
+      renderEffortSelect();
+    }
+
+    async function updateSettings(payload){
+      try {
+        const resp = await fetch('/api/model', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        applySettings(data);
+      } catch (error) {
+        console.error('Failed to update settings', error);
+        setStatus('Settings update failed');
+        renderModelSelect();
+        renderEffortSelect();
+      }
+    }
+
+    async function loadSettings(){
+      try {
+        const data = await fetch('/api/model').then(r=>r.json());
+        applySettings(data);
+      } catch (error) {
+        console.error('Failed to load settings', error);
+        modelSelect.innerHTML = '<option>Unavailable</option>';
+        modelSelect.disabled = true;
+        effortSelect.innerHTML = '<option>Unavailable</option>';
+        effortSelect.disabled = true;
+        setStatus('Settings unavailable');
+      }
+    }
+
+    modelSelect.addEventListener('change', async (event)=>{
+      let { value } = event.target;
+      if (value === CUSTOM_MODEL_VALUE){
+        const custom = prompt('Enter model ID (leave blank for config default)', settingsState.model || '');
+        if (custom === null){
+          renderModelSelect();
+          return;
+        }
+        value = custom.trim();
+      }
+      // Avoid redundant update
+      if ((value || null) === (settingsState.model || null)) {
+        renderModelSelect();
+        return;
+      }
+      await updateSettings({ model: value || null });
+    });
+
+    effortSelect.addEventListener('change', async (event)=>{
+      const { value } = event.target;
+      if ((value || null) === (settingsState.effort || null)) {
+        renderEffortSelect();
+        return;
+      }
+      await updateSettings({ effort: value || null });
+    });
+
+    loadSettings();
+  </script>
+</body>
+</html>
