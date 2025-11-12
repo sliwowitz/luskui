@@ -2,6 +2,7 @@ import express from "express";
 import { Codex } from "@openai/codex-sdk";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 
 import {
@@ -28,9 +29,13 @@ import {
   updateModelSelection
 } from "./lib/models.js";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const staticDir = path.join(__dirname, "static");
+
 const app = express();
 app.use(express.json());
-app.use("/static", express.static("/opt/codexui/static"));
+app.use("/static", express.static(staticDir));
 
 const codex = new Codex();
 
