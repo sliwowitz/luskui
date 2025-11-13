@@ -9,21 +9,13 @@ This setup runs an **OpenAI Codex agent inside a Podman container** that also ho
 * The files in `/opt/codexgui` provide a **lightweight web UI** (SDK-powered) that mimics the “Codex Cloud” flow:
   discuss code, inspect thinking/command execution, and **export/apply diffs**.
 
-This local UI is intentionally thin so you can iterate quickly **from within the same container** (e.g., launch Codex in a shell, have it modify `/opt/codexgui`, refresh the UI, repeat).
-
 ---
 
 ## Container Layout
 
 * **Project root**: `/workspace/<projectname>`
   The UI treats this as its repository root (set by `REPO_ROOT` env).
-* **Codex GUI** (this app): `/opt/codexgui`
-
-  * `package.json` — JS dependencies and startup script
-  * `server.js` — Express backend using **`@openai/codex-sdk`**
-  * `static/` — Browser UI (HTML/JS/CSS, no build step)
-
-**Shared auth/config**: `~/.codex` (mounted volume) is used by both CLI and SDK.
+* **Codex GUI** (this app): `/opt/codexgui` — the UI is meant to be installed there inside the container.
 
 ---
 
@@ -44,163 +36,96 @@ This mirrors the Cloud UI workflow, but the agent edits **your local workspace**
 
 ---
 
-## Files in `/opt/codexgui`
+## Repository layout
 
-### 1) `package.json`
+* **Project root** – `/opt/codexui` inside the production image (or `/workspace/codex-in-podman` when iterating locally)
+  * `server.js` — Express server that bridges the browser UI with `@openai/codex-sdk` threads. It streams events, captures
+    command output, stores the last diff, exposes file-browser APIs, and wires in model selection.
+  * `lib/` — runtime helpers used by the server:
+    * `config.js` — derives repo paths, environment defaults, and shared config such as `REPO_ROOT`, logging destinations, and
+      fallback model lists. Also provides `resolveRepoPath` to guard file access.
+    * `auth.js` — loads API keys from env or `~/.codex/auth.json`.
+    * `runStore.js` — in-memory store keyed by run id (prompt, command log, last diff).
+    * `logging.js` — appends structured lines to `/opt/codexui/codexui.log` (configurable via `CODEXUI_LOG`).
+    * `models.js` — tracks the active model/effort, fetches model ids from the OpenAI API, and merges with local fallbacks.
+  * `static/` — framework-free browser UI served from `/static/`.
+    * `index.html` — chat pane, command log, diff viewer, file browser, and model/effort selectors backed by `/api/model`.
+    * `marked.min.js` — Markdown renderer for Codex responses.
+  * `package.json` — Node ESM project (`express` + `@openai/codex-sdk`).
+  * `node_modules/` — installed dependencies (kept checked in for the container environment).
 
-**Purpose:** declares runtime deps and how to start the server.
-
-* **Key dependencies:**
-
-  * `@openai/codex-sdk` — official SDK used to start runs and stream events
-  * `express` — minimal HTTP server (REST + SSE)
-* **No bundlers/build steps** required. Everything runs as-is with Node.
-
-What you might change:
-
-* Pin/upgrade the SDK version.
-* Add small libs (e.g., a nicer diff renderer) without changing the server.
-
----
-
-### 2) `server.js`
-
-**Purpose:** the backend that **bridges Codex SDK ⇄ Browser UI**.
-
-Responsibilities:
-
-* **Config/env**
-
-  * `REPO_ROOT` (default `/workspace`) — project directory Codex works in
-  * `HOST` (default `0.0.0.0`) and `PORT` (default `7860`) — server binding
-
-* **Static files**
-
-  * Serves `/static/` (the web UI) as-is
-
-* **Session management**
-
-  * Creates a **run** per user request (`/api/send`)
-  * Streams Codex **events** over **SSE** (`/api/stream/:id`)
-  * Keeps transient state: last diff (patch), recent command log
-
-* **API surface (SDK-only)**
-
-  * `POST /api/send` → `{ runId }`
-    Allocates a run & stores the prompt (returns immediately).
-  * `GET /api/stream/:id` (SSE)
-    Uses `codex.runStreamed({ prompt, cwd: REPO_ROOT })` to forward events:
-
-    * `thinking` (collapsed in UI)
-    * `message` (Markdown answer)
-    * `tool.start|tool.stdout|tool.stderr|tool.end`
-    * `diff` (stores latest patch)
-    * `done` or `error`
-  * `GET /api/cmd-log/:id` → `{ commands: [...] }`
-    Returns collected command lines/stdout/stderr for the run.
-  * `GET /api/last-diff/:id` → `{ diff: <unified patch or null> }`
-  * `POST /api/apply/:id` → `{ ok, output }`
-    Writes the stored patch to a temp file and runs `git apply --index` (stages changes on success).
-
-* **Repository endpoints (for the left file-pane)**
-
-  * `GET /api/list?path=` → `{ root, path, entries: [{name,dir}], error? }`
-  * `GET /api/read?path=...`
-  * `POST /api/save` with `{ path, content }`
-
-Design notes:
-
-* **SSE** keeps the browser responsive and tolerant of long runs.
-* The server tries to **never 404** the repo listing; on errors, it returns `entries: []` and a message (the UI can retry).
-* “Apply last diff” is **opt-in** and uses `git apply --index` so your staging area reflects changes.
+The Express server is configured to serve static assets from `$CODEXUI_DIR/static` in production, but during development the
+repo’s `static/` directory mirrors that layout.
 
 ---
 
-### 3) `static/` (Web UI)
+## Container bootstrap
 
-**Purpose:** A small, framework-free browser UI.
+The `uc.codexui.sdk.containerfile` image (see sample snippet below) wires up the runtime like so:
 
-Main pieces inside:
+1. Verifies SSH material in `/home/dev/.ssh`, copies it to `/root/.ssh`, and warms `github.com` host keys.
+2. Clones (or hard-resets) `CODEXUI_REPO` into `CODEXUI_DIR` – defaults to `/opt/codexui`.
+3. Runs `npm ci --omit=dev` (or `npm install --omit=dev`) inside `CODEXUI_DIR`.
+4. Clones (or fetches) the workspace project repo into `REPO_ROOT` – defaults to `/workspace/ultimate-container`.
+5. Executes `node server.js`, which binds to `$HOST:$PORT` (defaults `0.0.0.0:7860`).
 
-* `index.html`
-
-  * **Chat** pane:
-
-    * User’s prompts (right-aligned bubble)
-    * Codex outputs grouped by **thinking** (collapsible) and **codex** (answer), rendered as **Markdown**
-  * **Commands** tab:
-
-    * Live stream of `tool.*` events (shell commands + stdout/stderr)
-  * **Diffs** tab:
-
-    * Shows the latest `diff` patch; **Apply Last Diff** button triggers `/api/apply/:id`
-  * **Repo pane** (left side):
-
-    * Directory tree rooted at `REPO_ROOT`
-    * Quick viewer/editor (simple modal for now)
-  * Small script adds:
-
-    * SSE client (connects to `/api/stream/:id`)
-    * Markdown rendering (`marked.min.js`)
-    * Minimal retry/error banners for robustness
-
-What you might change:
-
-* Nicer code/diff highlighting.
-* A proper editor (Monaco) instead of `prompt()` for file edits.
-* A run history pane with “resume” and “compare” actions.
+```
+ENV REPO_ROOT="/workspace/ultimate-container" \
+    CODE_REPO="https://gitlab.com/electric-sheep/ultimate-container.git" \
+    HOST="0.0.0.0" PORT="7860" \
+    CODEXUI_DIR="/opt/codexui" \
+    CODEXUI_REPO="git@github.com:sliwowitz/codex-in-podman.git"
+```
 
 ---
 
-## Typical Workflow (Inside This Container)
+## Runtime behaviour
 
-1. **Mount the project** under `/workspace/<projectname>`.
-   Ensure `REPO_ROOT=/workspace/<projectname>` for the UI container.
-
-2. **Auth/config** are mounted to `/home/dev/.codex` (shared with CLI).
-   The SDK reads `~/.codex/config.toml` so your model/profile/approval settings apply here too.
-
-3. **Open the UI**: [http://localhost:7860](http://localhost:7860)
-
-   * Type a prompt: *“Summarize the architecture”* / *“Add a unit test for X”* / *“Refactor Y to use std::mdspan”*
-   * Watch **thinking**, **commands**, and **diffs** stream in live
-   * Click **Apply Last Diff** to stage changes
-
-4. **Iterate quickly**:
-   Keep a terminal in the same container to:
-
-   * run `git status`, `git diff`
-   * run `codex` CLI directly when you want line-by-line control
-   * have Codex modify `/opt/codexgui` and then refresh the browser
+* **Runs & streaming**
+  * `/api/send` creates a run id via `runStore.createRun` and logs the prompt.
+  * `/api/stream/:id` starts a Codex thread in `REPO_ROOT` (default `/workspace`) and forwards streamed events to the browser
+    (thinking, messages, command execution, file diffs, status updates). Diffs are cached via `setLastDiff` so they can be
+    applied later.
+  * `/api/cmd-log/:id` and `/api/last-diff/:id` expose the captured command log and the most recent diff.
+* **Diff application**
+  * `/api/apply/:id` writes the cached diff to a temp file inside `REPO_ROOT` and shells out to `git apply --index`.
+* **Repository browser**
+  * `/api/list`, `/api/read`, `/api/save` all go through `resolveRepoPath` to prevent path escapes and implement the UI’s
+    simple file tree + inline editor.
+* **Model management**
+  * `/api/model` (GET/POST) surfaces the current model/effort along with defaults pulled from `~/.codex/config.toml` (or
+    env overrides). `models.js` keeps a cached list fetched from the OpenAI API and merges it with `FALLBACK_MODELS`.
+* **Logging**
+  * Every run/action is logged via `lib/logging.js` to stdout and (when available) `/opt/codexui/codexui.log`.
 
 ---
 
-## Using Codex from the Container Shell (Optional)
+## Environment knobs
 
-* **Interactive**: `codex -C /workspace/<projectname>`
-* **One-shot**: `codex exec -C /workspace/<projectname> "Write a Catch2 test for Vector::push_back"`
-* **Apply** last diff: `codex apply`
+These env vars influence behaviour (all optional):
 
-Both CLI and SDK share the same config/auth. You can freely switch between them.
+| Variable | Purpose |
+| --- | --- |
+| `REPO_ROOT` | Working directory passed to Codex threads (default `/workspace`). |
+| `HOST` / `PORT` | Express bind address/port (defaults `0.0.0.0:7860`). |
+| `CODEXUI_LOG` | Override the log file path (defaults to `/opt/codexui/codexui.log`). |
+| `CODEXUI_MODEL`, `CODEXUI_EFFORT` | Force default model/effort without editing `~/.codex/config.toml`. |
+| `CODEXUI_SKIP_GIT_CHECK` | Skip verifying that `REPO_ROOT` contains a Git repo (enabled automatically if `.git` missing). |
+| `CODEXUI_MODEL_CACHE_MS` | TTL for cached model lists (defaults to 5 minutes). |
+| `CODEXUI_MODEL_FETCH_TIMEOUT_MS` | Timeout for the model list request (defaults to 5 seconds). |
 
----
-
-## Permissions & Safety
-
-* The UI writes only under `REPO_ROOT` (server guards against path traversal).
-* Diffs are applied via `git apply --index`; if the patch doesn’t apply, you’ll get stderr in the UI.
-* For shells/commands, the UI **only displays** what Codex runs; execution happens within the SDK’s tool calls (subject to your `~/.codex/config.toml` policy: model, sandboxing, approvals).
-
----
-
-## Roadmap / Nice-to-haves
-
-* Diff viewer with side-by-side rendering (e.g., diff2html)
-* Per-run history: timestamps, prompts, applied patches
-* Buttons for model/profile toggles (saved back to `~/.codex/config.toml`)
-* Multi-file patch preview with selective apply
+The app reads API keys from `OPENAI_API_KEY`, `CODEX_API_KEY`, or `~/.codex/auth.json`.
 
 ---
 
-*This document is meant for the agent (and humans!) working **inside** the container to understand the moving parts quickly and modify the UI safely. The intent is to keep everything small, hackable, and easy to iterate with Codex itself.*
+## Typical workflow
 
+1. Mount a project at `/workspace/<name>` and set `REPO_ROOT` accordingly if needed.
+2. Ensure `~/.codex/config.toml` and `~/.codex/auth.json` exist (shared with the CLI).
+3. Start the server (`node server.js`) and open `http://localhost:7860`.
+4. Chat with the agent, inspect streamed events (thinking/commands/diffs), tweak the active model/effort, apply diffs, and use
+   the file browser to inspect or edit files in-place.
+
+For aspirational UI ideas, see `ROADMAP.md`.
+
+This document reflects the current state of the repo so agents and humans know where logic lives and how to extend it safely.
