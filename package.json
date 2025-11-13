@@ -6,7 +6,7 @@
     "build": "tsc --noEmit",
     "dev": "tsx watch server.ts",
     "start": "tsx server.ts",
-    "test": "tsx --test"
+    "test": "tsx --test $(find test -name '*.test.ts' -print | sort)"
   },
   "dependencies": {
     "@openai/codex-sdk": "^0.57.0",
