@@ -7,12 +7,31 @@ import {
 } from "./config.js";
 import { getAccessToken } from "./auth.js";
 
-let activeModel = DEFAULT_MODEL;
-let activeEffort = DEFAULT_EFFORT;
-let cachedModels = { list: null, fetchedAt: 0 };
-let inflightModelFetch = null;
+interface ModelListCache {
+  list: string[] | null;
+  fetchedAt: number;
+}
 
-async function fetchModelsFromApi() {
+export interface ModelSettings {
+  model: string | null;
+  defaultModel: string | null;
+  availableModels: string[];
+  effort: string | null;
+  defaultEffort: string | null;
+  effortOptions: string[];
+}
+
+export interface ModelSelectionInput {
+  model?: string | null;
+  effort?: string | null;
+}
+
+let activeModel: string | null = DEFAULT_MODEL;
+let activeEffort: string | null = DEFAULT_EFFORT;
+let cachedModels: ModelListCache = { list: null, fetchedAt: 0 };
+let inflightModelFetch: Promise<string[]> | null = null;
+
+async function fetchModelsFromApi(): Promise<string[] | null> {
   if (typeof fetch !== "function") return null;
   const token = getAccessToken();
   if (!token) return null;
@@ -32,7 +51,7 @@ async function fetchModelsFromApi() {
     }
     const payload = await resp.json();
     if (!payload || !Array.isArray(payload.data)) return null;
-    const seen = new Set();
+    const seen = new Set<string>();
     for (const entry of payload.data) {
       const id = typeof entry?.id === "string" ? entry.id : null;
       if (!id) continue;
@@ -49,7 +68,7 @@ async function fetchModelsFromApi() {
   }
 }
 
-export async function getAvailableModels() {
+export async function getAvailableModels(): Promise<string[]> {
   const now = Date.now();
   if (cachedModels.list && now - cachedModels.fetchedAt < MODEL_CACHE_TTL_MS) {
     return cachedModels.list;
@@ -74,35 +93,41 @@ export async function getAvailableModels() {
         inflightModelFetch = null;
       });
   }
-  return inflightModelFetch;
+  return inflightModelFetch ?? Promise.resolve(cachedModels.list ?? []);
 }
 
-export function getActiveModel() {
+export function getActiveModel(): string | null {
   return activeModel;
 }
 
-export function getActiveEffort() {
+export function getActiveEffort(): string | null {
   return activeEffort;
 }
 
-export function updateModelSelection({ model, effort } = {}) {
-  if ("model" in arguments[0] && typeof model !== "string") {
-    activeModel = null;
-  } else if (typeof model === "string") {
-    const requested = model.trim();
-    activeModel = requested || null;
+export function updateModelSelection(selection: ModelSelectionInput = {}): void {
+  if (Object.prototype.hasOwnProperty.call(selection, "model")) {
+    const value = selection.model;
+    if (typeof value === "string") {
+      const requested = value.trim();
+      activeModel = requested || null;
+    } else {
+      activeModel = null;
+    }
   }
-  if (effort === null || effort === "") {
-    activeEffort = null;
-  } else if (typeof effort === "string") {
-    const normalized = effort.trim().toLowerCase();
-    if (EFFORT_OPTIONS.includes(normalized)) {
-      activeEffort = normalized;
+  if (Object.prototype.hasOwnProperty.call(selection, "effort")) {
+    const value = selection.effort;
+    if (value === null || value === "") {
+      activeEffort = null;
+    } else if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (EFFORT_OPTIONS.includes(normalized)) {
+        activeEffort = normalized;
+      }
     }
   }
 }
 
-export async function getModelSettings() {
+export async function getModelSettings(): Promise<ModelSettings> {
   const models = await getAvailableModels();
   return {
     model: activeModel,

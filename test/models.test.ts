@@ -5,13 +5,18 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { FALLBACK_MODELS } from "../lib/config.js";
 
+type ModelsModule = typeof import("../lib/models.js");
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const modelsModuleHref = pathToFileURL(path.join(__dirname, "..", "lib", "models.js")).href;
 
-const originalFetch = global.fetch;
-const trackedEnvKeys = ["OPENAI_API_KEY", "CODEXUI_MODEL_CACHE_MS"];
-const originalEnv = Object.fromEntries(trackedEnvKeys.map((key) => [key, process.env[key]]));
+const originalFetch = globalThis.fetch;
+const trackedEnvKeys = ["OPENAI_API_KEY", "CODEXUI_MODEL_CACHE_MS"] as const;
+const originalEnv: Record<(typeof trackedEnvKeys)[number], string | undefined> = Object.fromEntries(
+  trackedEnvKeys.map((key) => [key, process.env[key]])
+) as Record<(typeof trackedEnvKeys)[number], string | undefined>;
+const globalWithMutableFetch = globalThis as typeof globalThis & { fetch?: typeof fetch };
 
 test.afterEach(() => {
   for (const key of trackedEnvKeys) {
@@ -21,24 +26,40 @@ test.afterEach(() => {
       process.env[key] = originalEnv[key];
     }
   }
-  global.fetch = originalFetch;
+  if (originalFetch) {
+    globalWithMutableFetch.fetch = originalFetch;
+  } else {
+    delete globalWithMutableFetch.fetch;
+  }
 });
 
-async function loadModelsModule({ apiKey, fetchImpl, cacheMs } = {}) {
+async function loadModelsModule({ apiKey, fetchImpl, cacheMs }: LoadModelsModuleOptions = {}): Promise<ModelsModule> {
   applyEnvOverride("OPENAI_API_KEY", apiKey);
   applyEnvOverride("CODEXUI_MODEL_CACHE_MS", cacheMs);
   if (fetchImpl === undefined) {
-    global.fetch = originalFetch;
+    if (originalFetch) {
+      globalWithMutableFetch.fetch = originalFetch;
+    } else {
+      delete globalWithMutableFetch.fetch;
+    }
   } else if (fetchImpl === null) {
-    global.fetch = undefined;
+    delete globalWithMutableFetch.fetch;
   } else {
-    global.fetch = fetchImpl;
+    globalWithMutableFetch.fetch = fetchImpl as FetchLike;
   }
   const href = `${modelsModuleHref}?t=${randomUUID()}`;
-  return import(href);
+  return import(href) as Promise<ModelsModule>;
 }
 
-function applyEnvOverride(key, value) {
+type FetchLike = typeof fetch;
+
+interface LoadModelsModuleOptions {
+  apiKey?: string | null;
+  fetchImpl?: FetchLike | null;
+  cacheMs?: number | string | null;
+}
+
+function applyEnvOverride(key: (typeof trackedEnvKeys)[number], value: string | number | null | undefined): void {
   if (value === undefined || value === null) {
     delete process.env[key];
   } else {
@@ -48,7 +69,7 @@ function applyEnvOverride(key, value) {
 
 test("getAvailableModels merges remote data with fallbacks and caches calls", async () => {
   let callCount = 0;
-  const mockFetch = async () => {
+  const mockFetch = async (..._args: Parameters<FetchLike>) => {
     callCount += 1;
     return {
       ok: true,
@@ -111,7 +132,7 @@ test("getAvailableModels falls back to bundled list when remote fetch is unavail
 
 test("getAvailableModels coalesces concurrent fetches", async () => {
   let callCount = 0;
-  const mockFetch = async () => {
+  const mockFetch = async (..._args: Parameters<FetchLike>) => {
     callCount += 1;
     await new Promise((resolve) => setTimeout(resolve, 10));
     return {

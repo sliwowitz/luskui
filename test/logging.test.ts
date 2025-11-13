@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
+import fs, { type WriteStream } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
+
+type LoggingModule = typeof import("../lib/logging.js");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,24 +21,27 @@ test.afterEach(() => {
   console.error = originalConsoleError;
 });
 
-async function loadLoggingModule() {
+async function loadLoggingModule(): Promise<LoggingModule> {
   const href = `${loggingModuleHref}?t=${randomUUID()}`;
-  return import(href);
+  return import(href) as Promise<LoggingModule>;
 }
 
 test("logRun writes serialized entries to the log stream and console", async () => {
-  const writes = [];
-  fs.createWriteStream = () => ({
-    write(chunk) {
-      writes.push(chunk);
-      return true;
-    }
-  });
+  const writes: string[] = [];
+  fs.createWriteStream = (() => {
+    const stream: Pick<WriteStream, "write"> = {
+      write(chunk: string | Buffer) {
+        writes.push(String(chunk));
+        return true;
+      }
+    };
+    return stream as WriteStream;
+  }) as typeof fs.createWriteStream;
 
-  const messages = [];
-  console.log = (message) => {
+  const messages: string[] = [];
+  console.log = ((message?: unknown) => {
     messages.push(String(message));
-  };
+  }) as typeof console.log;
 
   const { logRun } = await loadLoggingModule();
 
@@ -56,19 +61,19 @@ test("logRun writes serialized entries to the log stream and console", async () 
 });
 
 test("logRun falls back to console-only logging when the log file cannot be opened", async () => {
-  fs.createWriteStream = () => {
+  fs.createWriteStream = ((..._args: Parameters<typeof fs.createWriteStream>) => {
     throw new Error("permission denied");
-  };
+  }) as typeof fs.createWriteStream;
 
-  const errors = [];
-  console.error = (message) => {
+  const errors: string[] = [];
+  console.error = ((message?: unknown) => {
     errors.push(String(message));
-  };
+  }) as typeof console.error;
 
-  const messages = [];
-  console.log = (message) => {
+  const messages: string[] = [];
+  console.log = ((message?: unknown) => {
     messages.push(String(message));
-  };
+  }) as typeof console.log;
 
   const { logRun } = await loadLoggingModule();
 

@@ -1,18 +1,17 @@
-import express from "express";
-import { Codex } from "@openai/codex-sdk";
+import express, { type Request, type Response } from "express";
+import {
+  Codex,
+  type CommandExecutionItem,
+  type FileChangeItem,
+  type ModelReasoningEffort,
+  type ThreadEvent
+} from "@openai/codex-sdk";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 
-import {
-  REPO_ROOT,
-  HOST,
-  PORT,
-  REPO_ROOT_ABS,
-  SKIP_GIT_REPO_CHECK,
-  resolveRepoPath
-} from "./lib/config.js";
+import { REPO_ROOT, HOST, PORT, REPO_ROOT_ABS, SKIP_GIT_REPO_CHECK, resolveRepoPath } from "./lib/config.js";
 import { logRun } from "./lib/logging.js";
 import {
   createRun,
@@ -20,14 +19,24 @@ import {
   appendCommandLog,
   setLastDiff,
   getLastDiff,
-  getCommands
+  getCommands,
+  type RunEntry
 } from "./lib/runStore.js";
-import {
-  getModelSettings,
-  getActiveModel,
-  getActiveEffort,
-  updateModelSelection
-} from "./lib/models.js";
+import { getModelSettings, getActiveModel, getActiveEffort, updateModelSelection, type ModelSelectionInput } from "./lib/models.js";
+
+type ServerSentEvent = Record<string, unknown> & { type?: string };
+
+interface CommandOutputState {
+  flushed: number;
+}
+
+type FileChangeEntryWithPatch = FileChangeItem["changes"][number] & { patch?: string | null };
+
+type FileChangeWithPatch = Omit<FileChangeItem, "changes"> & {
+  patch?: string | null;
+  diff?: { patch?: string | null };
+  changes: FileChangeEntryWithPatch[];
+};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,7 +50,7 @@ const codex = new Codex();
 
 app.get("/", (_, res) => res.redirect("/static/index.html"));
 
-app.post("/api/send", async (req, res) => {
+app.post("/api/send", async (req: Request, res: Response) => {
   const prompt = String(req.body?.text ?? "");
   const runId = createRun(prompt);
   logRun(runId, "Created run", {
@@ -50,8 +59,9 @@ app.post("/api/send", async (req, res) => {
   res.json({ runId });
 });
 
-app.get("/api/stream/:id", async (req, res) => {
+app.get("/api/stream/:id", async (req: Request, res: Response) => {
   const id = req.params.id;
+  if (!id) return res.status(400).json({ error: "missing run id" });
   const run = getRun(id);
   if (!run) return res.status(404).json({ error: "no such run" });
 
@@ -59,8 +69,8 @@ app.get("/api/stream/:id", async (req, res) => {
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.flushHeaders?.();
 
-  const send = payload => res.write(`data: ${JSON.stringify(payload)}\n\n`);
-  const commandOutputState = new Map();
+  const send = (payload: ServerSentEvent): void => res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  const commandOutputState = new Map<string, CommandOutputState>();
   let clientClosed = false;
 
   logRun(id, "SSE stream opened");
@@ -78,10 +88,11 @@ app.get("/api/stream/:id", async (req, res) => {
     networkAccessEnabled: true,
     approvalPolicy: "never",
     model: getActiveModel() || undefined,
-    modelReasoningEffort: getActiveEffort() || undefined
+    modelReasoningEffort: (getActiveEffort() || undefined) as ModelReasoningEffort | undefined
   });
 
-  const handleCommandItem = (eventType, item) => {
+  const handleCommandItem = (eventType: string, item: CommandExecutionItem): void => {
+    if (typeof item.id !== "string") return;
     const existing = commandOutputState.get(item.id);
     if (!existing) {
       commandOutputState.set(item.id, { flushed: 0 });
@@ -108,21 +119,22 @@ app.get("/api/stream/:id", async (req, res) => {
     }
   };
 
-  const emitThinking = text => {
+  const emitThinking = (text?: string | null): void => {
     if (!text) return;
     send({ type: "thinking", text });
   };
-  const emitMessage = text => {
+  const emitMessage = (text?: string | null): void => {
     if (!text) return;
     send({ type: "message", text });
   };
-  const emitDiff = patch => {
+  const emitDiff = (patch?: string | null): void => {
     if (!patch) return;
     setLastDiff(id, patch);
     send({ type: "diff", diff: { patch } });
   };
 
-  const translateEvent = ev => {
+  const translateEvent = (raw: unknown): boolean => {
+    const ev = raw as ThreadEvent;
     switch (ev.type) {
       case "thread.started":
         logRun(id, "Thread started", { threadId: ev.thread_id });
@@ -139,6 +151,7 @@ app.get("/api/stream/:id", async (req, res) => {
       case "item.updated":
       case "item.completed": {
         const item = ev.item;
+        if (!item) return true;
         switch (item.type) {
           case "reasoning":
             emitThinking(item.text);
@@ -150,10 +163,13 @@ app.get("/api/stream/:id", async (req, res) => {
             handleCommandItem(ev.type, item);
             break;
           case "file_change": {
+            const fileChange = item as FileChangeWithPatch;
             const patch =
-              item.patch ||
-              item.diff?.patch ||
-              (Array.isArray(item.changes) ? item.changes.find(c => c.patch)?.patch : null);
+              fileChange.patch ||
+              fileChange.diff?.patch ||
+              (Array.isArray(fileChange.changes)
+                ? fileChange.changes.find(change => change.patch)?.patch || null
+                : null);
             if (patch) {
               emitDiff(patch);
             }
@@ -169,20 +185,22 @@ app.get("/api/stream/:id", async (req, res) => {
       }
       case "error":
         throw new Error(ev.message || "Codex stream error");
-      default:
-        if (ev.type === "diff" && ev.diff?.patch) {
-          emitDiff(ev.diff.patch);
+      default: {
+        const fallback = raw as { type?: string; diff?: { patch?: string } };
+        if (fallback.type === "diff" && fallback.diff?.patch) {
+          emitDiff(fallback.diff.patch);
           return true;
         }
-        if (ev.type && typeof ev.type === "string") {
-          send(ev);
+        if (fallback.type && typeof fallback.type === "string") {
+          send(fallback as ServerSentEvent);
         }
         return true;
+      }
     }
   };
 
   try {
-    const { events } = await thread.runStreamed(run.prompt);
+    const { events } = (await thread.runStreamed(run.prompt)) as { events: AsyncIterable<unknown> };
     const iterator = events[Symbol.asyncIterator]();
     while (true) {
       const { value, done } = await iterator.next();
@@ -197,8 +215,9 @@ app.get("/api/stream/:id", async (req, res) => {
       send({ type: "done" });
     }
   } catch (e) {
-    logRun(id, "Codex run error", e instanceof Error ? e.stack || e.message : e);
-    send({ type: "error", error: String(e instanceof Error ? e.message : e) });
+    const errorMessage = e instanceof Error ? e.message : String(e);
+    logRun(id, "Codex run error", e instanceof Error ? e.stack || errorMessage : e);
+    send({ type: "error", error: errorMessage });
   } finally {
     logRun(id, "SSE stream closing");
     res.end();
@@ -217,7 +236,7 @@ app.get("/api/model", async (_req, res) => {
 });
 
 app.post("/api/model", async (req, res) => {
-  updateModelSelection(req.body || {});
+  updateModelSelection((req.body || {}) as ModelSelectionInput);
   const settings = await getModelSettings();
   logRun("model", "Model selection updated", {
     activeModel: settings.model || "(default)",
