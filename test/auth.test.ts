@@ -13,14 +13,14 @@ const authModuleHref = pathToFileURL(path.join(__dirname, "..", "lib", "auth.ts"
 
 const trackedEnvKeys = ["OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_AUTH"] as const;
 const originalEnv: Record<(typeof trackedEnvKeys)[number], string | undefined> = Object.fromEntries(
-  trackedEnvKeys.map((key) => [key, process.env[key]])
+  trackedEnvKeys.map(key => [key, process.env[key]])
 ) as Record<(typeof trackedEnvKeys)[number], string | undefined>;
 const originalReadFileSync = fs.readFileSync;
 
 test.afterEach(() => {
   for (const key of trackedEnvKeys) {
     if (originalEnv[key] === undefined) {
-      delete process.env[key];
+      clearEnv(key);
     } else {
       process.env[key] = originalEnv[key];
     }
@@ -44,10 +44,14 @@ interface LoadAuthModuleOptions {
 
 function applyEnv(key: (typeof trackedEnvKeys)[number], value: string | null | undefined): void {
   if (value === undefined || value === null) {
-    delete process.env[key];
+    clearEnv(key);
   } else {
     process.env[key] = value;
   }
+}
+
+function clearEnv(key: (typeof trackedEnvKeys)[number]): void {
+  Reflect.deleteProperty(process.env, key);
 }
 
 function mockAuthFile(contents: string): void {

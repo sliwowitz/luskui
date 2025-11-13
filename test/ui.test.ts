@@ -13,9 +13,9 @@ const THEME_KEY = "codexui-theme";
 
 const inlineScripts: string[] = (() => {
   const { document } = parseHTML(indexHtml);
-  return [...document.querySelectorAll("script")]
-    .filter((script) => !script.getAttribute("src"))
-    .map((script) => script.textContent || "");
+  return Array.from(document.querySelectorAll("script"))
+    .filter(script => !script.getAttribute("src"))
+    .map(script => script.textContent || "");
 })();
 
 function extractRule(pattern: string): boolean {
@@ -37,7 +37,7 @@ test("appendCommandBlock renders <pre> entries with matching classes", async () 
   const { context, document } = await bootstrapUi();
   context.appendCommandBlock("echo test", "start");
   context.appendCommandBlock("done", "output");
-  const blocks = [...document.querySelectorAll("#commands pre")];
+  const blocks = Array.from(document.querySelectorAll("#commands pre"));
   assert.equal(blocks.length, 2);
   assert.equal(blocks[0]?.className, "cmd cmd-start");
   assert.equal(blocks[0]?.textContent, "echo test");

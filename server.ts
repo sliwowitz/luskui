@@ -69,7 +69,9 @@ app.get("/api/stream/:id", async (req: Request, res: Response) => {
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.flushHeaders?.();
 
-  const send = (payload: ServerSentEvent): void => res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  const send = (payload: ServerSentEvent): void => {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
   const commandOutputState = new Map<string, CommandOutputState>();
   let clientClosed = false;
 
