@@ -5,11 +5,11 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 
-type LoggingModule = typeof import("../lib/logging.js");
+type LoggingModule = typeof import("../lib/logging.ts");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const loggingModuleHref = pathToFileURL(path.join(__dirname, "..", "lib", "logging.js")).href;
+const loggingModuleHref = pathToFileURL(path.join(__dirname, "..", "lib", "logging.ts")).href;
 
 const originalCreateWriteStream = fs.createWriteStream;
 const originalConsoleLog = console.log;

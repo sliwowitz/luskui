@@ -8,7 +8,7 @@ import {
   getLastDiff,
   getRun,
   setLastDiff
-} from "../lib/runStore.js";
+} from "../lib/runStore.ts";
 
 test("createRun stores prompt and initializes run state", () => {
   const runId = createRun("hello world");

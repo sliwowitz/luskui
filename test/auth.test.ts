@@ -5,11 +5,11 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 
-type AuthModule = typeof import("../lib/auth.js");
+type AuthModule = typeof import("../lib/auth.ts");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const authModuleHref = pathToFileURL(path.join(__dirname, "..", "lib", "auth.js")).href;
+const authModuleHref = pathToFileURL(path.join(__dirname, "..", "lib", "auth.ts")).href;
 
 const trackedEnvKeys = ["OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_AUTH"] as const;
 const originalEnv: Record<(typeof trackedEnvKeys)[number], string | undefined> = Object.fromEntries(

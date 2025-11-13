@@ -8,7 +8,7 @@ const originalRepoRoot = process.env.REPO_ROOT;
 const tempRepoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codexui-repo-"));
 process.env.REPO_ROOT = tempRepoRoot;
 
-const { resolveRepoPath } = await import("../lib/config.js");
+  const { resolveRepoPath } = await import("../lib/config.ts");
 
 test.after(() => {
   process.env.REPO_ROOT = originalRepoRoot;

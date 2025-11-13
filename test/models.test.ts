@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
-import { FALLBACK_MODELS } from "../lib/config.js";
+import { FALLBACK_MODELS } from "../lib/config.ts";
 
-type ModelsModule = typeof import("../lib/models.js");
+type ModelsModule = typeof import("../lib/models.ts");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const modelsModuleHref = pathToFileURL(path.join(__dirname, "..", "lib", "models.js")).href;
+const modelsModuleHref = pathToFileURL(path.join(__dirname, "..", "lib", "models.ts")).href;
 
 const originalFetch = globalThis.fetch;
 const trackedEnvKeys = ["OPENAI_API_KEY", "CODEXUI_MODEL_CACHE_MS"] as const;
