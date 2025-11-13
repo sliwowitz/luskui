@@ -4,35 +4,222 @@
   <meta charset="utf-8"/>
   <title>Codex UI (SDK)</title>
   <style>
-    html,body{height:100%} body{margin:0;display:flex;font-family:system-ui,sans-serif}
-    #files{width:280px;border-right:1px solid #ddd;overflow:auto;padding:8px}
-    #main{flex:1;display:flex;flex-direction:column}
-    #toolbar{display:flex;gap:12px;border-bottom:1px solid #ddd;padding:8px;align-items:flex-start;flex-wrap:wrap}
-    #toolbar .inline-field{display:flex;flex-direction:column;gap:2px;font-size:12px;color:#555}
-    #toolbar select{min-width:180px;padding:6px 8px;border-radius:6px;border:1px solid #ccc;background:#fff;font-size:14px}
+    :root{
+      color-scheme:light;
+      --bg:#f8f8fb;
+      --panel:#ffffff;
+      --panel-alt:#f2f2f7;
+      --panel-alt-strong:#e4e5ec;
+      --border:#d7d7e2;
+      --text:#111322;
+      --muted:#5c6275;
+      --control-bg:#ffffff;
+      --control-border:#c8cad5;
+      --bubble-user-bg:#e3edff;
+      --bubble-user-border:#baccff;
+      --bubble-codex-bg:#ffffff;
+      --bubble-codex-border:#e4e6ef;
+      --bubble-thinking-bg:#fbfbff;
+      --bubble-thinking-border:#cfd2e1;
+      --pre-bg:#f1f2f7;
+      --cmd-start-bg:#e5ecff;
+      --cmd-start-border:#c2cfff;
+      --cmd-output-bg:#edf9e7;
+      --cmd-output-border:#c9e1bd;
+      --cmd-meta-bg:#f4f4f8;
+    }
+    :root[data-theme="dark"]{
+      color-scheme:dark;
+      --bg:#0f1118;
+      --panel:#161922;
+      --panel-alt:#1f2331;
+      --panel-alt-strong:#2d3243;
+      --border:#2f3547;
+      --text:#f4f6ff;
+      --muted:#a3abc4;
+      --control-bg:#1f2331;
+      --control-border:#3c4258;
+      --bubble-user-bg:#1d2f55;
+      --bubble-user-border:#3a5eb3;
+      --bubble-codex-bg:#1a1f2b;
+      --bubble-codex-border:#2f3547;
+      --bubble-thinking-bg:#1a1f2b;
+      --bubble-thinking-border:#434b64;
+      --pre-bg:#0f1724;
+      --cmd-start-bg:#1c2a55;
+      --cmd-start-border:#526ab6;
+      --cmd-output-bg:#142d1d;
+      --cmd-output-border:#3e6949;
+      --cmd-meta-bg:#202637;
+    }
+    @media (prefers-color-scheme:dark){
+      :root:not([data-theme]){
+        color-scheme:dark;
+        --bg:#0f1118;
+        --panel:#161922;
+        --panel-alt:#1f2331;
+        --panel-alt-strong:#2d3243;
+        --border:#2f3547;
+        --text:#f4f6ff;
+        --muted:#a3abc4;
+        --control-bg:#1f2331;
+        --control-border:#3c4258;
+        --bubble-user-bg:#1d2f55;
+        --bubble-user-border:#3a5eb3;
+        --bubble-codex-bg:#1a1f2b;
+        --bubble-codex-border:#2f3547;
+        --bubble-thinking-bg:#1a1f2b;
+        --bubble-thinking-border:#434b64;
+        --pre-bg:#0f1724;
+        --cmd-start-bg:#1c2a55;
+        --cmd-start-border:#526ab6;
+        --cmd-output-bg:#142d1d;
+        --cmd-output-border:#3e6949;
+        --cmd-meta-bg:#202637;
+      }
+    }
+    html,body{height:100%}
+    body{
+      margin:0;
+      display:flex;
+      font-family:system-ui,sans-serif;
+      background:var(--bg);
+      color:var(--text);
+    }
+    #files{
+      width:280px;
+      border-right:1px solid var(--border);
+      overflow:auto;
+      padding:8px;
+      background:var(--panel);
+    }
+    #main{flex:1;display:flex;flex-direction:column;background:var(--panel)}
+    #toolbar{
+      display:flex;
+      gap:12px;
+      border-bottom:1px solid var(--border);
+      padding:8px;
+      align-items:flex-start;
+      flex-wrap:wrap;
+      background:var(--panel-alt);
+    }
+    #toolbar button,
+    #toolbar select{
+      border-radius:6px;
+      border:1px solid var(--control-border);
+      background:var(--control-bg);
+      color:var(--text);
+      font-size:14px;
+    }
+    #toolbar button{
+      padding:6px 10px;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    #themeToggle{
+      min-width:19ch;
+    }
+    #applyDiffButton{
+      min-width:15ch;
+    }
+    #toolbar .inline-field{
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+      font-size:12px;
+      color:var(--muted);
+    }
+    #toolbar select{
+      min-width:180px;
+      padding:6px 8px;
+    }
     #toolbar select:disabled{opacity:.6}
-    #tabs{display:flex;gap:8px;border-bottom:1px solid #eee;padding:6px 8px}
-    .tab{padding:6px 10px;border-radius:999px;border:1px solid #ddd;cursor:pointer}
-    .tab.active{background:#f2f2f2}
+    #tabs{
+      display:flex;
+      gap:8px;
+      border-bottom:1px solid var(--border);
+      padding:6px 8px;
+      background:var(--panel);
+    }
+    .tab{
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid var(--border);
+      cursor:pointer;
+    }
+    .tab.active{
+      background:var(--panel-alt);
+      border-color:var(--panel-alt-strong);
+    }
     #panes{flex:1;position:relative}
     .pane{position:absolute;inset:0;overflow:auto;padding:12px;display:none}
     .pane.active{display:block}
     #commands{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace}
-    .bubble{max-width:980px;margin:10px 0;padding:10px;border-radius:8px;border:1px solid #eee;background:#fff}
-    .user{background:#e8f0ff;border-color:#c8d8ff}
-    .codex{background:#fff;border-color:#e6e6e6}
-    .thinking details{background:#fcfcfc;border:1px dashed #ccc;border-radius:6px;padding:8px}
-    .thinking summary{cursor:pointer;color:#666}
-    pre{overflow:auto;background:#f5f5f5;padding:8px;border-radius:6px}
+    .bubble{
+      max-width:980px;
+      margin:10px 0;
+      padding:10px;
+      border-radius:8px;
+      border:1px solid var(--bubble-codex-border);
+      background:var(--bubble-codex-bg);
+      color:var(--text);
+    }
+    .user{
+      background:var(--bubble-user-bg);
+      border-color:var(--bubble-user-border);
+    }
+    .codex{
+      background:var(--bubble-codex-bg);
+      border-color:var(--bubble-codex-border);
+    }
+    .thinking details{
+      background:var(--bubble-thinking-bg);
+      border:1px dashed var(--bubble-thinking-border);
+      border-radius:6px;
+      padding:8px;
+    }
+    .thinking summary{cursor:pointer;color:var(--muted)}
+    pre{
+      overflow:auto;
+      background:var(--pre-bg);
+      padding:8px;
+      border-radius:6px;
+    }
     code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace}
-    #input{display:flex;border-top:1px solid #ddd}
-    #input textarea{flex:1;padding:8px;border:0;resize:vertical;min-height:56px}
-    #input button{padding:8px 14px;border:0;border-left:1px solid #ddd;cursor:pointer}
-    #status{color:#666}
-    .cmd{font-family:inherit;border:1px solid #ececec;padding:6px 8px;border-radius:6px;margin:6px 0;white-space:pre-wrap}
-    .cmd-start{background:#eef3ff;border-color:#c7d5ff}
-    .cmd-output{background:#f5fff2;border-color:#cfe9c1}
-    .cmd-meta{background:#f7f7f7;color:#555}
+    #input{
+      display:flex;
+      border-top:1px solid var(--border);
+      background:var(--panel-alt);
+    }
+    #input textarea{
+      flex:1;
+      padding:8px;
+      border:0;
+      resize:vertical;
+      min-height:56px;
+      background:transparent;
+      color:var(--text);
+    }
+    #input button{
+      padding:8px 14px;
+      border:0;
+      border-left:1px solid var(--border);
+      cursor:pointer;
+      background:var(--control-bg);
+      color:var(--text);
+    }
+    #status{color:var(--muted)}
+    .cmd{
+      font-family:inherit;
+      border:1px solid var(--border);
+      padding:6px 8px;
+      border-radius:6px;
+      margin:6px 0;
+      white-space:pre-wrap;
+    }
+    .cmd-start{background:var(--cmd-start-bg);border-color:var(--cmd-start-border)}
+    .cmd-output{background:var(--cmd-output-bg);border-color:var(--cmd-output-border)}
+    .cmd-meta{background:var(--cmd-meta-bg);color:var(--muted)}
   </style>
 </head>
 <body>
@@ -42,7 +229,8 @@
   </div>
   <div id="main">
     <div id="toolbar">
-      <button onclick="applyDiff()">Apply Last Diff</button>
+      <button id="themeToggle" type="button">Theme: Auto</button>
+      <button id="applyDiffButton" onclick="applyDiff()">Apply Last Diff</button>
       <label class="inline-field">
         <span>Model</span>
         <select id="modelSelect" disabled>
@@ -91,6 +279,7 @@
     const statusEl = document.getElementById('status');
     const modelSelect = document.getElementById('modelSelect');
     const effortSelect = document.getElementById('effortSelect');
+    const themeToggle = document.getElementById('themeToggle');
     function setStatus(s){ statusEl.textContent=s; }
     function mdToHtml(md){ try { return marked.parse(md); } catch{ return md; } }
 
@@ -123,6 +312,54 @@
       effortOptions: []
     };
     const CUSTOM_MODEL_VALUE = "__custom__";
+    const THEME_PREFERENCE_KEY = 'codexui-theme';
+    const themeMedia = window.matchMedia('(prefers-color-scheme: dark)');
+
+    function setThemePreference(theme){
+      if(theme){
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem(THEME_PREFERENCE_KEY, theme);
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+        localStorage.removeItem(THEME_PREFERENCE_KEY);
+      }
+      updateThemeToggle();
+    }
+
+    function updateThemeToggle(){
+      const stored = localStorage.getItem(THEME_PREFERENCE_KEY);
+      if(!stored){
+        themeToggle.textContent = `Theme: Auto (${themeMedia.matches ? 'Dark' : 'Light'})`;
+      } else {
+        themeToggle.textContent = `Theme: ${stored === 'dark' ? 'Dark' : 'Light'}`;
+      }
+    }
+
+    themeToggle.addEventListener('click', ()=>{
+      const stored = localStorage.getItem(THEME_PREFERENCE_KEY);
+      if(!stored){
+        setThemePreference(themeMedia.matches ? 'light' : 'dark');
+      } else if (stored === 'dark'){
+        setThemePreference('light');
+      } else {
+        setThemePreference(null); // back to auto
+      }
+    });
+
+    themeMedia.addEventListener('change', ()=>{
+      if(!localStorage.getItem(THEME_PREFERENCE_KEY)){
+        document.documentElement.removeAttribute('data-theme');
+        updateThemeToggle();
+      }
+    });
+
+    (function initTheme(){
+      const stored = localStorage.getItem(THEME_PREFERENCE_KEY);
+      if(stored){
+        document.documentElement.setAttribute('data-theme', stored);
+      }
+      updateThemeToggle();
+    })();
 
     function flush(){
       if (thinkBuf.trim()){ bubble('thinking', thinkBuf, true); thinkBuf=''; }
