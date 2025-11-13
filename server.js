@@ -74,6 +74,9 @@ app.get("/api/stream/:id", async (req, res) => {
   const thread = codex.startThread({
     workingDirectory: REPO_ROOT,
     skipGitRepoCheck: SKIP_GIT_REPO_CHECK,
+    sandboxMode: "danger-full-access",
+    networkAccessEnabled: true,
+    approvalPolicy: "never",
     model: getActiveModel() || undefined,
     modelReasoningEffort: getActiveEffort() || undefined
   });
