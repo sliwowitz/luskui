@@ -19,22 +19,22 @@ test.afterEach(() => {
   console.error = originalConsoleError;
 });
 
-async function loadLoggingModule() {
+async function loadLoggingModule(): Promise<typeof import("../lib/logging.js")> {
   const href = `${loggingModuleHref}?t=${randomUUID()}`;
   return import(href);
 }
 
 test("logRun writes serialized entries to the log stream and console", async () => {
-  const writes = [];
-  fs.createWriteStream = () => ({
-    write(chunk) {
+  const writes: string[] = [];
+  fs.createWriteStream = (() => ({
+    write(chunk: string) {
       writes.push(chunk);
       return true;
     }
-  });
+  })) as unknown as typeof fs.createWriteStream;
 
-  const messages = [];
-  console.log = (message) => {
+  const messages: string[] = [];
+  console.log = (message: unknown) => {
     messages.push(String(message));
   };
 
@@ -55,18 +55,18 @@ test("logRun writes serialized entries to the log stream and console", async () 
   assert.match(messages[0], /^\[.*\] \[run abc123\] Applied diff/, "console output should include the timestamp, run id and message");
 });
 
-test("logRun falls back to console-only logging when the log file cannot be opened", async () => {
-  fs.createWriteStream = () => {
-    throw new Error("permission denied");
-  };
+  test("logRun falls back to console-only logging when the log file cannot be opened", async () => {
+    fs.createWriteStream = (() => {
+      throw new Error("permission denied");
+    }) as unknown as typeof fs.createWriteStream;
 
-  const errors = [];
-  console.error = (message) => {
+  const errors: string[] = [];
+  console.error = (message: unknown) => {
     errors.push(String(message));
   };
 
-  const messages = [];
-  console.log = (message) => {
+  const messages: string[] = [];
+  console.log = (message: unknown) => {
     messages.push(String(message));
   };
 

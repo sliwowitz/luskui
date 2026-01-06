@@ -2,7 +2,7 @@ import fs from "node:fs";
 
 import { LOG_PATH } from "./config.js";
 
-let logStream;
+let logStream: fs.WriteStream | null;
 try {
   logStream = fs.createWriteStream(LOG_PATH, { flags: "a" });
   console.log(`Logging Codex UI activity to ${LOG_PATH}`);
@@ -11,7 +11,7 @@ try {
   logStream = null;
 }
 
-function serializeLogData(data) {
+function serializeLogData(data: unknown): string {
   if (data === undefined || data === null) return "";
   if (typeof data === "string") return data;
   try {
@@ -21,7 +21,7 @@ function serializeLogData(data) {
   }
 }
 
-export function logRun(id, message, data) {
+export function logRun(id: string, message: string, data?: unknown): void {
   const ts = new Date().toISOString();
   const serialized = serializeLogData(data);
   const line = `[${ts}] [run ${id}] ${message}${serialized ? ` — ${serialized}` : ""}`;

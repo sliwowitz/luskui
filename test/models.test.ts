@@ -10,8 +10,11 @@ const __dirname = path.dirname(__filename);
 const modelsModuleHref = pathToFileURL(path.join(__dirname, "..", "lib", "models.js")).href;
 
 const originalFetch = global.fetch;
-const trackedEnvKeys = ["OPENAI_API_KEY", "CODEXUI_MODEL_CACHE_MS"];
-const originalEnv = Object.fromEntries(trackedEnvKeys.map((key) => [key, process.env[key]]));
+const trackedEnvKeys = ["OPENAI_API_KEY", "CODEXUI_MODEL_CACHE_MS"] as const;
+type EnvKey = (typeof trackedEnvKeys)[number];
+const originalEnv: Record<EnvKey, string | undefined> = Object.fromEntries(
+  trackedEnvKeys.map(key => [key, process.env[key]])
+) as Record<EnvKey, string | undefined>;
 
 test.afterEach(() => {
   for (const key of trackedEnvKeys) {
@@ -24,21 +27,24 @@ test.afterEach(() => {
   global.fetch = originalFetch;
 });
 
-async function loadModelsModule({ apiKey, fetchImpl, cacheMs } = {}) {
-  applyEnvOverride("OPENAI_API_KEY", apiKey);
-  applyEnvOverride("CODEXUI_MODEL_CACHE_MS", cacheMs);
+type FetchImpl = typeof fetch | null | undefined;
+type ModelsModule = typeof import("../lib/models.js");
+
+async function loadModelsModule({ apiKey, fetchImpl, cacheMs }: Record<string, unknown> = {}): Promise<ModelsModule> {
+  applyEnvOverride("OPENAI_API_KEY", apiKey as string | null | undefined);
+  applyEnvOverride("CODEXUI_MODEL_CACHE_MS", cacheMs as string | number | null | undefined);
   if (fetchImpl === undefined) {
-    global.fetch = originalFetch;
+    global.fetch = originalFetch as typeof fetch;
   } else if (fetchImpl === null) {
-    global.fetch = undefined;
+    global.fetch = undefined as unknown as typeof fetch;
   } else {
-    global.fetch = fetchImpl;
+    global.fetch = fetchImpl as typeof fetch;
   }
   const href = `${modelsModuleHref}?t=${randomUUID()}`;
   return import(href);
 }
 
-function applyEnvOverride(key, value) {
+function applyEnvOverride(key: EnvKey, value: string | number | null | undefined): void {
   if (value === undefined || value === null) {
     delete process.env[key];
   } else {
