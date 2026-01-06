@@ -13,7 +13,7 @@ const originalFetch = global.fetch;
 const trackedEnvKeys = ["OPENAI_API_KEY", "CODEXUI_MODEL_CACHE_MS"] as const;
 type EnvKey = (typeof trackedEnvKeys)[number];
 const originalEnv: Record<EnvKey, string | undefined> = Object.fromEntries(
-  trackedEnvKeys.map(key => [key, process.env[key]])
+  trackedEnvKeys.map((key) => [key, process.env[key]])
 ) as Record<EnvKey, string | undefined>;
 
 test.afterEach(() => {
@@ -30,7 +30,11 @@ test.afterEach(() => {
 type FetchImpl = typeof fetch | null | undefined;
 type ModelsModule = typeof import("../lib/models.js");
 
-async function loadModelsModule({ apiKey, fetchImpl, cacheMs }: Record<string, unknown> = {}): Promise<ModelsModule> {
+async function loadModelsModule({
+  apiKey,
+  fetchImpl,
+  cacheMs
+}: Record<string, unknown> = {}): Promise<ModelsModule> {
   applyEnvOverride("OPENAI_API_KEY", apiKey as string | null | undefined);
   applyEnvOverride("CODEXUI_MODEL_CACHE_MS", cacheMs as string | number | null | undefined);
   if (fetchImpl === undefined) {
@@ -61,12 +65,7 @@ test("getAvailableModels merges remote data with fallbacks and caches calls", as
       status: 200,
       async json() {
         return {
-          data: [
-            { id: "gpt-zeta" },
-            { id: "ft:skip-me" },
-            { id: "o4" },
-            { id: "deprecated-model" }
-          ]
+          data: [{ id: "gpt-zeta" }, { id: "ft:skip-me" }, { id: "o4" }, { id: "deprecated-model" }]
         };
       }
     };
@@ -132,5 +131,8 @@ test("getAvailableModels coalesces concurrent fetches", async () => {
   const [first, second] = await Promise.all([getAvailableModels(), getAvailableModels()]);
   assert.equal(callCount, 1, "inflight fetch should be shared across callers");
   assert.deepEqual(first, second, "concurrent callers should receive identical lists");
-  assert.ok(first.includes("gpt-concurrent"), "remote models should still be included in the response");
+  assert.ok(
+    first.includes("gpt-concurrent"),
+    "remote models should still be included in the response"
+  );
 });

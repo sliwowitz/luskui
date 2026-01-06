@@ -9,7 +9,8 @@ export const REPO_ROOT_ABS = path.resolve(REPO_ROOT);
 export const LOG_PATH = process.env.CODEXUI_LOG || path.join("/var/log", "codexui.log");
 
 const HOME_DIR = os.homedir?.() ?? process.env.HOME ?? "";
-export const CODEX_CONFIG_PATH = process.env.CODEX_CONFIG || path.join(HOME_DIR, ".codex", "config.toml");
+export const CODEX_CONFIG_PATH =
+  process.env.CODEX_CONFIG || path.join(HOME_DIR, ".codex", "config.toml");
 export const CODEX_AUTH_PATH = process.env.CODEX_AUTH || path.join(HOME_DIR, ".codex", "auth.json");
 
 function readConfigValue(regex: RegExp): string | null {
@@ -26,7 +27,8 @@ function readConfigValue(regex: RegExp): string | null {
 const DEFAULT_MODEL_FROM_CONFIG = readConfigValue(/^\s*model\s*=\s*"([^"]+)"/m);
 const DEFAULT_EFFORT_FROM_CONFIG = readConfigValue(/^\s*model_reasoning_effort\s*=\s*"([^"]+)"/m);
 
-export const DEFAULT_MODEL: string | null = process.env.CODEXUI_MODEL || DEFAULT_MODEL_FROM_CONFIG || null;
+export const DEFAULT_MODEL: string | null =
+  process.env.CODEXUI_MODEL || DEFAULT_MODEL_FROM_CONFIG || null;
 export const EFFORT_OPTIONS = ["minimal", "low", "medium", "high"] as const;
 export type ReasoningEffort = (typeof EFFORT_OPTIONS)[number];
 

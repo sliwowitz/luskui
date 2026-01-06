@@ -14,8 +14,8 @@ const THEME_KEY = "codexui-theme";
 const inlineScripts: string[] = (() => {
   const { document } = parseHTML(indexHtml);
   return Array.from(document.querySelectorAll("script"))
-    .filter(script => !script.getAttribute("src"))
-    .map(script => script.textContent);
+    .filter((script) => !script.getAttribute("src"))
+    .map((script) => script.textContent);
 })();
 
 function extractRule(pattern: string): boolean {
@@ -96,7 +96,7 @@ function createLocalStorage(initial: Record<string, string> = {}): StorageMock {
   const store = new Map<string, string>(Object.entries(initial));
   return {
     getItem(key: string) {
-      return store.has(key) ? store.get(key) ?? null : null;
+      return store.has(key) ? (store.get(key) ?? null) : null;
     },
     setItem(key: string, value: string) {
       store.set(key, String(value));
@@ -136,13 +136,15 @@ function createThemeMediaMock(prefersDark = false): ThemeMediaMock {
     },
     dispatchChange(nextValue: boolean) {
       matches = !!nextValue;
-      listeners.forEach(cb => cb({ matches }));
+      listeners.forEach((cb) => cb({ matches }));
     },
     addListener(listener: (this: MediaQueryList, ev: MediaQueryListEvent) => unknown) {
-      listeners.add(() => listener.call({ matches } as MediaQueryList, { matches } as MediaQueryListEvent));
+      listeners.add(() =>
+        listener.call({ matches } as MediaQueryList, { matches } as MediaQueryListEvent)
+      );
     },
     removeListener(listener: (this: MediaQueryList, ev: MediaQueryListEvent) => unknown) {
-      listeners.forEach(cb => {
+      listeners.forEach((cb) => {
         if ((cb as unknown) === listener) listeners.delete(cb);
       });
     },
@@ -242,7 +244,9 @@ async function bootstrapUi({ storedTheme = null, prefersDark = false }: Bootstra
   };
   context.globalThis = context as typeof globalThis;
   vm.createContext(context);
-  inlineScripts.forEach((code, idx) => vm.runInContext(code, context, { filename: `inline-script-${idx}.js` }));
+  inlineScripts.forEach((code, idx) =>
+    vm.runInContext(code, context, { filename: `inline-script-${idx}.js` })
+  );
   await nextTick();
   return { window, document, context, themeMediaMock, localStorage };
 }
@@ -257,5 +261,5 @@ function makeResponse(payload: Record<string, unknown>) {
 }
 
 function nextTick() {
-  return new Promise<void>(resolve => setImmediate(resolve));
+  return new Promise<void>((resolve) => setImmediate(resolve));
 }
