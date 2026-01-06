@@ -2,35 +2,35 @@
 
 This setup runs an **OpenAI Codex agent inside a Podman container** that also hosts a single project workspace. The pattern is:
 
-* **One project per container**, mounted at:
+- **One project per container**, mounted at:
   `/workspace/<projectname>`
-* **Codex** operates inside that workspace directory, with shared auth/config in `~/.codex`.
-* You can drive Codex **from the CLI** (interactive or `exec`) **or via the SDK** (programmatic, streaming events).
-* The files in `/opt/codexgui` provide a **lightweight web UI** (SDK-powered) that mimics the “Codex Cloud” flow:
+- **Codex** operates inside that workspace directory, with shared auth/config in `~/.codex`.
+- You can drive Codex **from the CLI** (interactive or `exec`) **or via the SDK** (programmatic, streaming events).
+- The files in `/opt/codexgui` provide a **lightweight web UI** (SDK-powered) that mimics the “Codex Cloud” flow:
   discuss code, inspect thinking/command execution, and **export/apply diffs**.
 
 ---
 
 ## Container Layout
 
-* **Project root**: `/workspace/<projectname>`
+- **Project root**: `/workspace/<projectname>`
   The UI treats this as its repository root (set by `REPO_ROOT` env).
-* **Codex GUI** (this app): `/opt/codexgui` — the UI is meant to be installed there inside the container.
+- **Codex GUI** (this app): `/opt/codexgui` — the UI is meant to be installed there inside the container.
 
 ---
 
 ## How the Local UI Works
 
-* The **browser** hits the Express server in this container.
-* The server uses **`@openai/codex-sdk`** to start a **streamed run** bound to `REPO_ROOT`.
-* It forwards **structured events** over **SSE** to the browser:
+- The **browser** hits the Express server in this container.
+- The server uses **`@openai/codex-sdk`** to start a **streamed run** bound to `REPO_ROOT`.
+- It forwards **structured events** over **SSE** to the browser:
+  - `thinking` — model’s internal reasoning (rendered collapsible)
+  - `message` — final/user-facing content (Markdown)
+  - `tool.*` — commands Codex runs (shown live in a “Commands” tab)
+  - `diff` — unified patches Codex proposes (shown in a “Diffs” tab)
+  - `done` — end of turn
 
-  * `thinking` — model’s internal reasoning (rendered collapsible)
-  * `message` — final/user-facing content (Markdown)
-  * `tool.*` — commands Codex runs (shown live in a “Commands” tab)
-  * `diff` — unified patches Codex proposes (shown in a “Diffs” tab)
-  * `done` — end of turn
-* The UI can **apply the last diff** via the backend using `git apply --index`.
+- The UI can **apply the last diff** via the backend using `git apply --index`.
 
 This mirrors the Cloud UI workflow, but the agent edits **your local workspace** directly.
 
@@ -38,21 +38,21 @@ This mirrors the Cloud UI workflow, but the agent edits **your local workspace**
 
 ## Repository layout
 
-* **Project root** – `/opt/codexui` inside the production image (or `/workspace/codex-in-podman` when iterating locally)
-  * `server.js` — Express server that bridges the browser UI with `@openai/codex-sdk` threads. It streams events, captures
+- **Project root** – `/opt/codexui` inside the production image (or `/workspace/codex-in-podman` when iterating locally)
+  - `server.js` — Express server that bridges the browser UI with `@openai/codex-sdk` threads. It streams events, captures
     command output, stores the last diff, exposes file-browser APIs, and wires in model selection.
-  * `lib/` — runtime helpers used by the server:
-    * `config.js` — derives repo paths, environment defaults, and shared config such as `REPO_ROOT`, logging destinations, and
+  - `lib/` — runtime helpers used by the server:
+    - `config.js` — derives repo paths, environment defaults, and shared config such as `REPO_ROOT`, logging destinations, and
       fallback model lists. Also provides `resolveRepoPath` to guard file access.
-    * `auth.js` — loads API keys from env or `~/.codex/auth.json`.
-    * `runStore.js` — in-memory store keyed by run id (prompt, command log, last diff).
-    * `logging.js` — appends structured lines to `/opt/codexui/codexui.log` (configurable via `CODEXUI_LOG`).
-    * `models.js` — tracks the active model/effort, fetches model ids from the OpenAI API, and merges with local fallbacks.
-  * `static/` — framework-free browser UI served from `/static/`.
-    * `index.html` — chat pane, command log, diff viewer, file browser, and model/effort selectors backed by `/api/model`.
-    * `marked.min.js` — Markdown renderer for Codex responses.
-  * `package.json` — Node ESM project (`express` + `@openai/codex-sdk`).
-  * `node_modules/` — installed dependencies (kept checked in for the container environment).
+    - `auth.js` — loads API keys from env or `~/.codex/auth.json`.
+    - `runStore.js` — in-memory store keyed by run id (prompt, command log, last diff).
+    - `logging.js` — appends structured lines to `/opt/codexui/codexui.log` (configurable via `CODEXUI_LOG`).
+    - `models.js` — tracks the active model/effort, fetches model ids from the OpenAI API, and merges with local fallbacks.
+  - `static/` — framework-free browser UI served from `/static/`.
+    - `index.html` — chat pane, command log, diff viewer, file browser, and model/effort selectors backed by `/api/model`.
+    - `marked.min.js` — Markdown renderer for Codex responses.
+  - `package.json` — Node ESM project (`express` + `@openai/codex-sdk`).
+  - `node_modules/` — installed dependencies (kept checked in for the container environment).
 
 The Express server is configured to serve static assets from `$CODEXUI_DIR/static` in production, but during development the
 repo’s `static/` directory mirrors that layout.
@@ -81,22 +81,22 @@ ENV REPO_ROOT="/workspace/ultimate-container" \
 
 ## Runtime behaviour
 
-* **Runs & streaming**
-  * `/api/send` creates a run id via `runStore.createRun` and logs the prompt.
-  * `/api/stream/:id` starts a Codex thread in `REPO_ROOT` (default `/workspace`) and forwards streamed events to the browser
+- **Runs & streaming**
+  - `/api/send` creates a run id via `runStore.createRun` and logs the prompt.
+  - `/api/stream/:id` starts a Codex thread in `REPO_ROOT` (default `/workspace`) and forwards streamed events to the browser
     (thinking, messages, command execution, file diffs, status updates). Diffs are cached via `setLastDiff` so they can be
     applied later.
-  * `/api/cmd-log/:id` and `/api/last-diff/:id` expose the captured command log and the most recent diff.
-* **Diff application**
-  * `/api/apply/:id` writes the cached diff to a temp file inside `REPO_ROOT` and shells out to `git apply --index`.
-* **Repository browser**
-  * `/api/list`, `/api/read`, `/api/save` all go through `resolveRepoPath` to prevent path escapes and implement the UI’s
+  - `/api/cmd-log/:id` and `/api/last-diff/:id` expose the captured command log and the most recent diff.
+- **Diff application**
+  - `/api/apply/:id` writes the cached diff to a temp file inside `REPO_ROOT` and shells out to `git apply --index`.
+- **Repository browser**
+  - `/api/list`, `/api/read`, `/api/save` all go through `resolveRepoPath` to prevent path escapes and implement the UI’s
     simple file tree + inline editor.
-* **Model management**
-  * `/api/model` (GET/POST) surfaces the current model/effort along with defaults pulled from `~/.codex/config.toml` (or
+- **Model management**
+  - `/api/model` (GET/POST) surfaces the current model/effort along with defaults pulled from `~/.codex/config.toml` (or
     env overrides). `models.js` keeps a cached list fetched from the OpenAI API and merges it with `FALLBACK_MODELS`.
-* **Logging**
-  * Every run/action is logged via `lib/logging.js` to stdout and (when available) `/opt/codexui/codexui.log`.
+- **Logging**
+  - Every run/action is logged via `lib/logging.js` to stdout and (when available) `/opt/codexui/codexui.log`.
 
 ---
 
@@ -104,15 +104,15 @@ ENV REPO_ROOT="/workspace/ultimate-container" \
 
 These env vars influence behaviour (all optional):
 
-| Variable | Purpose |
-| --- | --- |
-| `REPO_ROOT` | Working directory passed to Codex threads (default `/workspace`). |
-| `HOST` / `PORT` | Express bind address/port (defaults `0.0.0.0:7860`). |
-| `CODEXUI_LOG` | Override the log file path (defaults to `/opt/codexui/codexui.log`). |
-| `CODEXUI_MODEL`, `CODEXUI_EFFORT` | Force default model/effort without editing `~/.codex/config.toml`. |
-| `CODEXUI_SKIP_GIT_CHECK` | Skip verifying that `REPO_ROOT` contains a Git repo (enabled automatically if `.git` missing). |
-| `CODEXUI_MODEL_CACHE_MS` | TTL for cached model lists (defaults to 5 minutes). |
-| `CODEXUI_MODEL_FETCH_TIMEOUT_MS` | Timeout for the model list request (defaults to 5 seconds). |
+| Variable                          | Purpose                                                                                        |
+| --------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `REPO_ROOT`                       | Working directory passed to Codex threads (default `/workspace`).                              |
+| `HOST` / `PORT`                   | Express bind address/port (defaults `0.0.0.0:7860`).                                           |
+| `CODEXUI_LOG`                     | Override the log file path (defaults to `/opt/codexui/codexui.log`).                           |
+| `CODEXUI_MODEL`, `CODEXUI_EFFORT` | Force default model/effort without editing `~/.codex/config.toml`.                             |
+| `CODEXUI_SKIP_GIT_CHECK`          | Skip verifying that `REPO_ROOT` contains a Git repo (enabled automatically if `.git` missing). |
+| `CODEXUI_MODEL_CACHE_MS`          | TTL for cached model lists (defaults to 5 minutes).                                            |
+| `CODEXUI_MODEL_FETCH_TIMEOUT_MS`  | Timeout for the model list request (defaults to 5 seconds).                                    |
 
 The app reads API keys from `OPENAI_API_KEY`, `CODEX_API_KEY`, or `~/.codex/auth.json`.
 
@@ -129,3 +129,14 @@ The app reads API keys from `OPENAI_API_KEY`, `CODEX_API_KEY`, or `~/.codex/auth
 For aspirational UI ideas, see `ROADMAP.md`.
 
 This document reflects the current state of the repo so agents and humans know where logic lives and how to extend it safely.
+
+---
+
+## Linting & formatting
+
+Before committing changes, run the automated checks locally:
+
+1. `npm run lint` – validates the TypeScript sources using ESLint (files in `static/` are ignored).
+2. `npm run format:check` – ensures the repository matches the Prettier formatting rules (also ignores `static/`).
+
+Use `npm run format` to apply Prettier fixes automatically when needed.

@@ -1,5 +1,5 @@
-import test from "node:test";
-import assert from "node:assert/strict";
+import test from 'node:test';
+import assert from 'node:assert/strict';
 import {
   appendCommandLog,
   clearRun,
@@ -7,39 +7,39 @@ import {
   getCommands,
   getLastDiff,
   getRun,
-  setLastDiff
-} from "../lib/runStore.ts";
+  setLastDiff,
+} from '../lib/runStore.ts';
 
-test("createRun stores prompt and initializes run state", () => {
-  const runId = createRun("hello world");
+test('createRun stores prompt and initializes run state', () => {
+  const runId = createRun('hello world');
   const stored = getRun(runId);
 
-  assert.ok(runId, "runId should be truthy");
+  assert.ok(runId, 'runId should be truthy');
   if (!stored) {
-    throw new Error("run should exist immediately after creation");
+    throw new Error('run should exist immediately after creation');
   }
-  assert.equal(stored.prompt, "hello world");
+  assert.equal(stored.prompt, 'hello world');
   assert.equal(getLastDiff(runId), null);
   assert.deepEqual(getCommands(runId), []);
 
   clearRun(runId);
 });
 
-test("run mutation helpers update diff and command log", () => {
-  const runId = createRun("mutations");
+test('run mutation helpers update diff and command log', () => {
+  const runId = createRun('mutations');
 
-  setLastDiff(runId, "--- a\n+++ b");
-  appendCommandLog(runId, "pwd");
-  appendCommandLog(runId, "ls");
+  setLastDiff(runId, '--- a\n+++ b');
+  appendCommandLog(runId, 'pwd');
+  appendCommandLog(runId, 'ls');
 
-  assert.equal(getLastDiff(runId), "--- a\n+++ b");
-  assert.deepEqual(getCommands(runId), ["pwd", "ls"]);
+  assert.equal(getLastDiff(runId), '--- a\n+++ b');
+  assert.deepEqual(getCommands(runId), ['pwd', 'ls']);
 
   clearRun(runId);
 });
 
-test("clearRun removes existing entries", () => {
-  const runId = createRun("cleanup");
+test('clearRun removes existing entries', () => {
+  const runId = createRun('cleanup');
   clearRun(runId);
 
   assert.equal(getRun(runId), null);
