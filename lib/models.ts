@@ -3,16 +3,27 @@ import {
   DEFAULT_EFFORT,
   EFFORT_OPTIONS,
   FALLBACK_MODELS,
-  MODEL_CACHE_TTL_MS
+  MODEL_CACHE_TTL_MS,
+  type ReasoningEffort
 } from "./config.js";
 import { getAccessToken } from "./auth.js";
 
-let activeModel = DEFAULT_MODEL;
-let activeEffort = DEFAULT_EFFORT;
-let cachedModels = { list: null, fetchedAt: 0 };
-let inflightModelFetch = null;
+type ModelList = string[] | null;
 
-async function fetchModelsFromApi() {
+let activeModel: string | null = DEFAULT_MODEL;
+let activeEffort: ReasoningEffort | null = DEFAULT_EFFORT;
+let cachedModels: { list: ModelList; fetchedAt: number } = { list: null, fetchedAt: 0 };
+let inflightModelFetch: Promise<string[]> | null = null;
+
+interface ModelEntry {
+  id?: string;
+}
+
+interface ModelResponse {
+  data?: ModelEntry[];
+}
+
+async function fetchModelsFromApi(): Promise<string[] | null> {
   if (typeof fetch !== "function") return null;
   const token = getAccessToken();
   if (!token) return null;
@@ -30,9 +41,9 @@ async function fetchModelsFromApi() {
     if (!resp.ok) {
       throw new Error(`Model request failed (${resp.status})`);
     }
-    const payload = await resp.json();
+    const payload = (await resp.json()) as ModelResponse;
     if (!payload || !Array.isArray(payload.data)) return null;
-    const seen = new Set();
+    const seen = new Set<string>();
     for (const entry of payload.data) {
       const id = typeof entry?.id === "string" ? entry.id : null;
       if (!id) continue;
@@ -49,7 +60,7 @@ async function fetchModelsFromApi() {
   }
 }
 
-export async function getAvailableModels() {
+export async function getAvailableModels(): Promise<string[]> {
   const now = Date.now();
   if (cachedModels.list && now - cachedModels.fetchedAt < MODEL_CACHE_TTL_MS) {
     return cachedModels.list;
@@ -57,16 +68,16 @@ export async function getAvailableModels() {
   if (!inflightModelFetch) {
     inflightModelFetch = (async () => {
       const remote = await fetchModelsFromApi();
-      const combined = remote && remote.length ? remote : [];
+      const combined: string[] = remote && remote.length ? remote : [];
       const defaults = FALLBACK_MODELS.filter(Boolean);
-      const merged = Array.from(new Set([...combined, ...defaults])).sort((a, b) =>
+      const merged = Array.from(new Set<string>([...combined, ...defaults])).sort((a, b) =>
         a.localeCompare(b)
       );
       cachedModels = { list: merged, fetchedAt: Date.now() };
       return merged;
     })()
       .catch(() => {
-        const merged = Array.from(new Set(FALLBACK_MODELS));
+        const merged = Array.from(new Set<string>(FALLBACK_MODELS));
         cachedModels = { list: merged, fetchedAt: Date.now() };
         return merged;
       })
@@ -77,16 +88,22 @@ export async function getAvailableModels() {
   return inflightModelFetch;
 }
 
-export function getActiveModel() {
+export function getActiveModel(): string | null {
   return activeModel;
 }
 
-export function getActiveEffort() {
+export function getActiveEffort(): ReasoningEffort | null {
   return activeEffort;
 }
 
-export function updateModelSelection({ model, effort } = {}) {
-  if ("model" in arguments[0] && typeof model !== "string") {
+interface ModelSelection {
+  model?: unknown;
+  effort?: unknown;
+}
+
+export function updateModelSelection(selection: ModelSelection = {}): void {
+  const { model, effort } = selection;
+  if ("model" in selection && typeof model !== "string") {
     activeModel = null;
   } else if (typeof model === "string") {
     const requested = model.trim();
@@ -96,13 +113,20 @@ export function updateModelSelection({ model, effort } = {}) {
     activeEffort = null;
   } else if (typeof effort === "string") {
     const normalized = effort.trim().toLowerCase();
-    if (EFFORT_OPTIONS.includes(normalized)) {
-      activeEffort = normalized;
+    if ((EFFORT_OPTIONS as readonly string[]).includes(normalized)) {
+      activeEffort = normalized as ReasoningEffort;
     }
   }
 }
 
-export async function getModelSettings() {
+export async function getModelSettings(): Promise<{
+  model: string | null;
+  defaultModel: string | null;
+  availableModels: string[];
+  effort: ReasoningEffort | null;
+  defaultEffort: ReasoningEffort | null;
+  effortOptions: readonly ReasoningEffort[];
+}> {
   const models = await getAvailableModels();
   return {
     model: activeModel,

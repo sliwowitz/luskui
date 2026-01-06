@@ -1,4 +1,4 @@
-import express from "express";
+import express, { Request, Response } from "express";
 import { Codex } from "@openai/codex-sdk";
 import fs from "node:fs";
 import path from "node:path";
@@ -22,12 +22,40 @@ import {
   getLastDiff,
   getCommands
 } from "./lib/runStore.js";
-import {
-  getModelSettings,
-  getActiveModel,
-  getActiveEffort,
-  updateModelSelection
-} from "./lib/models.js";
+import { getModelSettings, getActiveModel, getActiveEffort, updateModelSelection } from "./lib/models.js";
+
+type CommandEventItem = {
+  id?: string;
+  type?: string;
+  text?: string;
+  message?: string;
+  command?: string;
+  aggregated_output?: string;
+  exit_code?: number;
+  status?: string;
+  patch?: string;
+  diff?: { patch?: string };
+  changes?: Array<{ patch?: string }>;
+};
+
+type StreamEvent = {
+  type?: string;
+  thread_id?: string;
+  usage?: unknown;
+  error?: { message?: string } | string;
+  item?: CommandEventItem;
+  diff?: { patch?: string };
+};
+
+type ModelSelectionPayload = { model?: unknown; effort?: unknown };
+
+type RunStream = AsyncIterable<StreamEvent> & {
+  [Symbol.asyncIterator](): AsyncIterator<StreamEvent>;
+};
+
+type ThreadRunner = {
+  runStreamed: (prompt: string) => Promise<{ events: RunStream }>;
+};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,10 +67,11 @@ app.use("/static", express.static(staticDir));
 
 const codex = new Codex();
 
-app.get("/", (_, res) => res.redirect("/static/index.html"));
+app.get("/", (_req: Request, res: Response) => res.redirect("/static/index.html"));
 
-app.post("/api/send", async (req, res) => {
-  const prompt = String(req.body?.text ?? "");
+app.post("/api/send", async (req: Request, res: Response) => {
+  const body = req.body as { text?: unknown };
+  const prompt = String(body?.text ?? "");
   const runId = createRun(prompt);
   logRun(runId, "Created run", {
     promptPreview: prompt.length > 200 ? `${prompt.slice(0, 197)}...` : prompt
@@ -50,7 +79,7 @@ app.post("/api/send", async (req, res) => {
   res.json({ runId });
 });
 
-app.get("/api/stream/:id", async (req, res) => {
+app.get("/api/stream/:id", async (req: Request, res: Response) => {
   const id = req.params.id;
   const run = getRun(id);
   if (!run) return res.status(404).json({ error: "no such run" });
@@ -59,8 +88,10 @@ app.get("/api/stream/:id", async (req, res) => {
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.flushHeaders?.();
 
-  const send = payload => res.write(`data: ${JSON.stringify(payload)}\n\n`);
-  const commandOutputState = new Map();
+  const send = (payload: unknown): void => {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+  const commandOutputState = new Map<string, { flushed: number }>();
   let clientClosed = false;
 
   logRun(id, "SSE stream opened");
@@ -71,7 +102,7 @@ app.get("/api/stream/:id", async (req, res) => {
     }
   });
 
-  const thread = codex.startThread({
+  const thread: ThreadRunner = codex.startThread({
     workingDirectory: REPO_ROOT,
     skipGitRepoCheck: SKIP_GIT_REPO_CHECK,
     sandboxMode: "danger-full-access",
@@ -81,16 +112,18 @@ app.get("/api/stream/:id", async (req, res) => {
     modelReasoningEffort: getActiveEffort() || undefined
   });
 
-  const handleCommandItem = (eventType, item) => {
-    const existing = commandOutputState.get(item.id);
+  const handleCommandItem = (eventType: string, item?: CommandEventItem): void => {
+    if (!item?.id) return;
+    const itemId = String(item.id);
+    const existing = commandOutputState.get(itemId);
     if (!existing) {
-      commandOutputState.set(item.id, { flushed: 0 });
+      commandOutputState.set(itemId, { flushed: 0 });
       const cmdLine = item.command || "command";
       appendCommandLog(id, `$ ${cmdLine}`);
       send({ type: "tool.start", tool: { name: cmdLine, args: [] } });
     }
-    const state = commandOutputState.get(item.id);
-    const output = item.aggregated_output || "";
+    const state = commandOutputState.get(itemId);
+    const output = item.aggregated_output ?? "";
     if (state && output.length > state.flushed) {
       const chunk = output.slice(state.flushed);
       state.flushed = output.length;
@@ -104,25 +137,25 @@ app.get("/api/stream/:id", async (req, res) => {
         exit_code: item.exit_code,
         status: item.status
       });
-      commandOutputState.delete(item.id);
+      commandOutputState.delete(itemId);
     }
   };
 
-  const emitThinking = text => {
+  const emitThinking = (text?: string | null): void => {
     if (!text) return;
     send({ type: "thinking", text });
   };
-  const emitMessage = text => {
+  const emitMessage = (text?: string | null): void => {
     if (!text) return;
     send({ type: "message", text });
   };
-  const emitDiff = patch => {
+  const emitDiff = (patch?: string | null): void => {
     if (!patch) return;
     setLastDiff(id, patch);
     send({ type: "diff", diff: { patch } });
   };
 
-  const translateEvent = ev => {
+  const translateEvent = (ev: StreamEvent): boolean => {
     switch (ev.type) {
       case "thread.started":
         logRun(id, "Thread started", { threadId: ev.thread_id });
@@ -134,11 +167,12 @@ app.get("/api/stream/:id", async (req, res) => {
         logRun(id, "Turn completed", ev.usage);
         return true;
       case "turn.failed":
-        throw new Error(ev.error?.message || "Codex turn failed");
+        throw new Error(typeof ev.error === "string" ? ev.error : ev.error?.message || "Codex turn failed");
       case "item.started":
       case "item.updated":
       case "item.completed": {
         const item = ev.item;
+        if (!item) return true;
         switch (item.type) {
           case "reasoning":
             emitThinking(item.text);
@@ -153,7 +187,7 @@ app.get("/api/stream/:id", async (req, res) => {
             const patch =
               item.patch ||
               item.diff?.patch ||
-              (Array.isArray(item.changes) ? item.changes.find(c => c.patch)?.patch : null);
+              (Array.isArray(item.changes) ? item.changes.find(change => change.patch)?.patch : null);
             if (patch) {
               emitDiff(patch);
             }
@@ -168,7 +202,7 @@ app.get("/api/stream/:id", async (req, res) => {
         return true;
       }
       case "error":
-        throw new Error(ev.message || "Codex stream error");
+        throw new Error(typeof ev.error === "string" ? ev.error : ev.error?.message || "Codex stream error");
       default:
         if (ev.type === "diff" && ev.diff?.patch) {
           emitDiff(ev.diff.patch);
@@ -205,19 +239,19 @@ app.get("/api/stream/:id", async (req, res) => {
   }
 });
 
-app.get("/api/last-diff/:id", (req, res) => {
+app.get("/api/last-diff/:id", (req: Request, res: Response) => {
   res.json({ diff: getLastDiff(req.params.id) });
 });
-app.get("/api/cmd-log/:id", (req, res) => {
+app.get("/api/cmd-log/:id", (req: Request, res: Response) => {
   res.json({ commands: getCommands(req.params.id) });
 });
 
-app.get("/api/model", async (_req, res) => {
+app.get("/api/model", async (_req: Request, res: Response) => {
   res.json(await getModelSettings());
 });
 
-app.post("/api/model", async (req, res) => {
-  updateModelSelection(req.body || {});
+app.post("/api/model", async (req: Request, res: Response) => {
+  updateModelSelection(req.body as ModelSelectionPayload);
   const settings = await getModelSettings();
   logRun("model", "Model selection updated", {
     activeModel: settings.model || "(default)",
@@ -228,7 +262,7 @@ app.post("/api/model", async (req, res) => {
   res.json(settings);
 });
 
-app.post("/api/apply/:id", async (req, res) => {
+app.post("/api/apply/:id", async (req: Request, res: Response) => {
   const patch = getLastDiff(req.params.id);
   if (!patch) return res.json({ ok: false, output: "No diff available" });
 
@@ -236,25 +270,29 @@ app.post("/api/apply/:id", async (req, res) => {
   try {
     fs.writeFileSync(tmp, patch, "utf8");
     const { spawn } = await import("node:child_process");
-    const p = spawn("bash", ["-lc", `git apply --index '${tmp.replace(/'/g, `'\\''`)}'`], { cwd: REPO_ROOT });
+    const p = spawn("bash", ["-lc", `git apply --index '${tmp.replace(/'/g, "'\\''")}'`], { cwd: REPO_ROOT });
     let out = "";
     p.stdout.on("data", d => (out += d.toString()));
     p.stderr.on("data", d => (out += d.toString()));
     p.on("close", code => {
       try {
         fs.unlinkSync(tmp);
-      } catch {}
+      } catch {
+        // ignore
+      }
       res.json({ ok: code === 0, output: out });
     });
   } catch (e) {
     try {
       fs.unlinkSync(tmp);
-    } catch {}
+    } catch {
+      // ignore
+    }
     res.json({ ok: false, output: String(e) });
   }
 });
 
-app.get("/api/list", (req, res) => {
+app.get("/api/list", (req: Request, res: Response) => {
   const requestedPath = typeof req.query.path === "string" ? req.query.path : "";
   try {
     const { abs, rel } = resolveRepoPath(requestedPath);
@@ -273,7 +311,7 @@ app.get("/api/list", (req, res) => {
   }
 });
 
-app.get("/api/read", (req, res) => {
+app.get("/api/read", (req: Request, res: Response) => {
   const requestedPath = req.query.path;
   if (typeof requestedPath !== "string" || !requestedPath) {
     return res.status(400).json({ error: "path is required" });
@@ -291,12 +329,13 @@ app.get("/api/read", (req, res) => {
   }
 });
 
-app.post("/api/save", (req, res) => {
-  const relPath = req.body?.path;
+app.post("/api/save", (req: Request, res: Response) => {
+  const body = req.body as { path?: unknown; content?: unknown };
+  const relPath = body?.path;
   if (typeof relPath !== "string" || !relPath) {
     return res.status(400).json({ ok: false, error: "path is required" });
   }
-  const content = typeof req.body?.content === "string" ? req.body.content : "";
+  const content = typeof body?.content === "string" ? body.content : "";
   try {
     const { abs, rel } = resolveRepoPath(relPath);
     fs.mkdirSync(path.dirname(abs), { recursive: true });

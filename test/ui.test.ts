@@ -11,14 +11,14 @@ const __dirname = path.dirname(__filename);
 const indexHtml = fs.readFileSync(path.join(__dirname, "..", "static", "index.html"), "utf8");
 const THEME_KEY = "codexui-theme";
 
-const inlineScripts = (() => {
+const inlineScripts: string[] = (() => {
   const { document } = parseHTML(indexHtml);
-  return [...document.querySelectorAll("script")]
-    .filter((script) => !script.getAttribute("src"))
-    .map((script) => script.textContent);
+  return Array.from(document.querySelectorAll("script"))
+    .filter(script => !script.getAttribute("src"))
+    .map(script => script.textContent);
 })();
 
-function extractRule(pattern) {
+function extractRule(pattern: string): boolean {
   return new RegExp(pattern, "i").test(indexHtml);
 }
 
@@ -37,7 +37,7 @@ test("appendCommandBlock renders <pre> entries with matching classes", async () 
   const { context, document } = await bootstrapUi();
   context.appendCommandBlock("echo test", "start");
   context.appendCommandBlock("done", "output");
-  const blocks = [...document.querySelectorAll("#commands pre")];
+  const blocks = Array.from(document.querySelectorAll("#commands pre"));
   assert.equal(blocks.length, 2);
   assert.equal(blocks[0].className, "cmd cmd-start");
   assert.equal(blocks[0].textContent, "echo test");
@@ -48,81 +48,120 @@ test("appendCommandBlock renders <pre> entries with matching classes", async () 
 test("theme toggle cycles preferences and persists manual selection", async () => {
   const { document, context, localStorage } = await bootstrapUi({ prefersDark: true });
   const button = document.getElementById("themeToggle");
-  assert.equal(button.textContent, "Theme: Auto (Dark)");
-  button.dispatchEvent(new context.window.Event("click"));
+  assert.ok(button);
+  const buttonEl = button as HTMLElement;
+  assert.equal(buttonEl.textContent, "Theme: Auto (Dark)");
+  buttonEl.dispatchEvent(new context.window.Event("click"));
   assert.equal(document.documentElement.getAttribute("data-theme"), "light");
   assert.equal(localStorage.getItem(THEME_KEY), "light");
-  assert.equal(button.textContent, "Theme: Light");
-  button.dispatchEvent(new context.window.Event("click"));
+  assert.equal(buttonEl.textContent, "Theme: Light");
+  buttonEl.dispatchEvent(new context.window.Event("click"));
   assert.equal(document.documentElement.getAttribute("data-theme"), null);
   assert.equal(localStorage.getItem(THEME_KEY), null);
-  assert.equal(button.textContent, "Theme: Auto (Dark)");
+  assert.equal(buttonEl.textContent, "Theme: Auto (Dark)");
 });
 
 test("stored theme preference is applied immediately on load", async () => {
   const { document, localStorage } = await bootstrapUi({ storedTheme: "dark", prefersDark: false });
   const button = document.getElementById("themeToggle");
+  assert.ok(button);
+  const buttonEl = button as HTMLElement;
   assert.equal(localStorage.getItem(THEME_KEY), "dark");
   assert.equal(document.documentElement.getAttribute("data-theme"), "dark");
-  assert.equal(button.textContent, "Theme: Dark");
+  assert.equal(buttonEl.textContent, "Theme: Dark");
 });
 
 test("auto theme label updates when system preference changes", async () => {
   const { document, themeMediaMock, context } = await bootstrapUi({ prefersDark: false });
   const button = document.getElementById("themeToggle");
-  assert.equal(button.textContent, "Theme: Auto (Light)");
+  assert.ok(button);
+  const buttonEl = button as HTMLElement;
+  assert.equal(buttonEl.textContent, "Theme: Auto (Light)");
   themeMediaMock.dispatchChange(true);
   await nextTick();
-  assert.equal(button.textContent, "Theme: Auto (Dark)");
-  button.dispatchEvent(new context.window.Event("click"));
+  assert.equal(buttonEl.textContent, "Theme: Auto (Dark)");
+  buttonEl.dispatchEvent(new context.window.Event("click"));
   themeMediaMock.dispatchChange(false);
   await nextTick();
-  assert.equal(button.textContent, "Theme: Light", "manual preference should block auto updates");
+  assert.equal(buttonEl.textContent, "Theme: Light", "manual preference should block auto updates");
 });
 
-function createLocalStorage(initial = {}) {
-  const store = new Map(Object.entries(initial));
+type StorageMock = {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+};
+
+function createLocalStorage(initial: Record<string, string> = {}): StorageMock {
+  const store = new Map<string, string>(Object.entries(initial));
   return {
-    getItem(key) {
-      return store.has(key) ? store.get(key) : null;
+    getItem(key: string) {
+      return store.has(key) ? store.get(key) ?? null : null;
     },
-    setItem(key, value) {
+    setItem(key: string, value: string) {
       store.set(key, String(value));
     },
-    removeItem(key) {
+    removeItem(key: string) {
       store.delete(key);
     }
   };
 }
 
-function createThemeMediaMock(prefersDark = false) {
+type ThemeMediaMock = {
+  readonly matches: boolean;
+  addEventListener(event: string, cb: (event: { matches: boolean }) => void): void;
+  removeEventListener(event: string, cb: (event: { matches: boolean }) => void): void;
+  dispatchChange(nextValue: boolean): void;
+  media: string;
+  onchange: ((this: MediaQueryList, ev: MediaQueryListEvent) => unknown) | null;
+  addListener(listener: (this: MediaQueryList, ev: MediaQueryListEvent) => unknown): void;
+  removeListener(listener: (this: MediaQueryList, ev: MediaQueryListEvent) => unknown): void;
+  dispatchEvent(event: Event): boolean;
+};
+
+function createThemeMediaMock(prefersDark = false): ThemeMediaMock {
   let matches = !!prefersDark;
-  const listeners = new Set();
+  const listeners = new Set<(event: { matches: boolean }) => void>();
   return {
+    media: "",
+    onchange: null,
     get matches() {
       return matches;
     },
-    addEventListener(event, cb) {
+    addEventListener(event: string, cb: (event: { matches: boolean }) => void) {
       if (event === "change") listeners.add(cb);
     },
-    removeEventListener(event, cb) {
+    removeEventListener(event: string, cb: (event: { matches: boolean }) => void) {
       if (event === "change") listeners.delete(cb);
     },
-    dispatchChange(nextValue) {
+    dispatchChange(nextValue: boolean) {
       matches = !!nextValue;
-      listeners.forEach((cb) => cb({ matches }));
+      listeners.forEach(cb => cb({ matches }));
+    },
+    addListener(listener: (this: MediaQueryList, ev: MediaQueryListEvent) => unknown) {
+      listeners.add(() => listener.call({ matches } as MediaQueryList, { matches } as MediaQueryListEvent));
+    },
+    removeListener(listener: (this: MediaQueryList, ev: MediaQueryListEvent) => unknown) {
+      listeners.forEach(cb => {
+        if ((cb as unknown) === listener) listeners.delete(cb);
+      });
+    },
+    dispatchEvent(_event: Event) {
+      return false;
     }
   };
 }
 
-async function bootstrapUi({ storedTheme = null, prefersDark = false } = {}) {
+type BootstrapOptions = { storedTheme?: string | null; prefersDark?: boolean };
+
+async function bootstrapUi({ storedTheme = null, prefersDark = false }: BootstrapOptions = {}) {
   const { window, document } = parseHTML(indexHtml);
   const localStorage = createLocalStorage(storedTheme ? { [THEME_KEY]: storedTheme } : {});
   Object.defineProperty(window, "localStorage", { value: localStorage, configurable: true });
   const promptStub = () => null;
   const optionCtor =
     window.Option ||
-    function Option(text, value = "") {
+    function Option(text: string, value: string = "") {
       const el = document.createElement("option");
       el.textContent = text;
       el.value = value;
@@ -132,9 +171,9 @@ async function bootstrapUi({ storedTheme = null, prefersDark = false } = {}) {
   window.Option = optionCtor;
 
   const themeMediaMock = createThemeMediaMock(prefersDark);
-  window.matchMedia = () => themeMediaMock;
+  window.matchMedia = () => themeMediaMock as unknown as MediaQueryList;
 
-  let currentSettings = {
+  let currentSettings: Record<string, unknown> = {
     model: null,
     defaultModel: "gpt-4o",
     effort: null,
@@ -143,10 +182,10 @@ async function bootstrapUi({ storedTheme = null, prefersDark = false } = {}) {
     effortOptions: ["minimal", "low", "medium", "high"]
   };
 
-  window.fetch = async (url, options = {}) => {
+  window.fetch = (async (url: string, options: RequestInit = {}) => {
     if (url.startsWith("/api/model")) {
       if ((options.method || "GET").toUpperCase() === "POST") {
-        const body = options.body ? JSON.parse(options.body) : {};
+        const body = options.body ? JSON.parse(options.body as string) : {};
         if (Object.prototype.hasOwnProperty.call(body, "model")) {
           currentSettings = { ...currentSettings, model: body.model || null };
         }
@@ -160,16 +199,33 @@ async function bootstrapUi({ storedTheme = null, prefersDark = false } = {}) {
     if (url.startsWith("/api/apply")) return makeResponse({ ok: true, output: "" });
     if (url.startsWith("/api/send")) return makeResponse({ runId: "test-run" });
     return makeResponse({});
-  };
+  }) as typeof window.fetch;
 
-  window.EventSource = class {
+  class EventSourceStub {
+    static readonly CONNECTING = 0;
+    static readonly OPEN = 1;
+    static readonly CLOSED = 2;
+
+    readonly CONNECTING = EventSourceStub.CONNECTING;
+    readonly OPEN = EventSourceStub.OPEN;
+    readonly CLOSED = EventSourceStub.CLOSED;
+    readyState = EventSourceStub.CLOSED;
+    url = "";
+    withCredentials = false;
+    onopen: ((this: EventSource, ev: Event) => unknown) | null = null;
+    onmessage: ((this: EventSource, ev: MessageEvent) => unknown) | null = null;
+    onerror: ((this: EventSource, ev: Event) => unknown) | null = null;
+
     constructor() {
       throw new Error("EventSource should not be constructed in tests");
     }
-    close() {}
-  };
 
-  const context = {
+    close() {}
+  }
+
+  window.EventSource = EventSourceStub as unknown as typeof EventSource;
+
+  const context: any = {
     window,
     document,
     console,
@@ -184,14 +240,14 @@ async function bootstrapUi({ storedTheme = null, prefersDark = false } = {}) {
     Option: window.Option,
     prompt: window.prompt
   };
-  context.globalThis = context;
+  context.globalThis = context as typeof globalThis;
   vm.createContext(context);
   inlineScripts.forEach((code, idx) => vm.runInContext(code, context, { filename: `inline-script-${idx}.js` }));
   await nextTick();
   return { window, document, context, themeMediaMock, localStorage };
 }
 
-function makeResponse(payload) {
+function makeResponse(payload: Record<string, unknown>) {
   return {
     ok: true,
     async json() {
@@ -201,5 +257,5 @@ function makeResponse(payload) {
 }
 
 function nextTick() {
-  return new Promise((resolve) => setImmediate(resolve));
+  return new Promise<void>(resolve => setImmediate(resolve));
 }
