@@ -22,7 +22,12 @@ import {
   getLastDiff,
   getCommands
 } from "./lib/runStore.js";
-import { getModelSettings, getActiveModel, getActiveEffort, updateModelSelection } from "./lib/models.js";
+import {
+  getModelSettings,
+  getActiveModel,
+  getActiveEffort,
+  updateModelSelection
+} from "./lib/models.js";
 
 type CommandEventItem = {
   id?: string;
@@ -167,7 +172,9 @@ app.get("/api/stream/:id", async (req: Request, res: Response) => {
         logRun(id, "Turn completed", ev.usage);
         return true;
       case "turn.failed":
-        throw new Error(typeof ev.error === "string" ? ev.error : ev.error?.message || "Codex turn failed");
+        throw new Error(
+          typeof ev.error === "string" ? ev.error : ev.error?.message || "Codex turn failed"
+        );
       case "item.started":
       case "item.updated":
       case "item.completed": {
@@ -187,7 +194,9 @@ app.get("/api/stream/:id", async (req: Request, res: Response) => {
             const patch =
               item.patch ||
               item.diff?.patch ||
-              (Array.isArray(item.changes) ? item.changes.find(change => change.patch)?.patch : null);
+              (Array.isArray(item.changes)
+                ? item.changes.find((change) => change.patch)?.patch
+                : null);
             if (patch) {
               emitDiff(patch);
             }
@@ -202,7 +211,9 @@ app.get("/api/stream/:id", async (req: Request, res: Response) => {
         return true;
       }
       case "error":
-        throw new Error(typeof ev.error === "string" ? ev.error : ev.error?.message || "Codex stream error");
+        throw new Error(
+          typeof ev.error === "string" ? ev.error : ev.error?.message || "Codex stream error"
+        );
       default:
         if (ev.type === "diff" && ev.diff?.patch) {
           emitDiff(ev.diff.patch);
@@ -270,11 +281,13 @@ app.post("/api/apply/:id", async (req: Request, res: Response) => {
   try {
     fs.writeFileSync(tmp, patch, "utf8");
     const { spawn } = await import("node:child_process");
-    const p = spawn("bash", ["-lc", `git apply --index '${tmp.replace(/'/g, "'\\''")}'`], { cwd: REPO_ROOT });
+    const p = spawn("bash", ["-lc", `git apply --index '${tmp.replace(/'/g, "'\\''")}'`], {
+      cwd: REPO_ROOT
+    });
     let out = "";
-    p.stdout.on("data", d => (out += d.toString()));
-    p.stderr.on("data", d => (out += d.toString()));
-    p.on("close", code => {
+    p.stdout.on("data", (d) => (out += d.toString()));
+    p.stderr.on("data", (d) => (out += d.toString()));
+    p.on("close", (code) => {
       try {
         fs.unlinkSync(tmp);
       } catch {
@@ -303,7 +316,7 @@ app.get("/api/list", (req: Request, res: Response) => {
         if (!a.isDirectory() && b.isDirectory()) return 1;
         return a.name.localeCompare(b.name);
       })
-      .map(dirent => ({ name: dirent.name, dir: dirent.isDirectory() }));
+      .map((dirent) => ({ name: dirent.name, dir: dirent.isDirectory() }));
 
     res.json({ root: REPO_ROOT_ABS, path: rel, entries });
   } catch (error) {

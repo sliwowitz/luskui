@@ -14,7 +14,7 @@ type EnvKey = "OPENAI_API_KEY" | "CODEX_API_KEY" | "CODEX_AUTH";
 
 const trackedEnvKeys: EnvKey[] = ["OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_AUTH"];
 const originalEnv: Record<EnvKey, string | undefined> = Object.fromEntries(
-  trackedEnvKeys.map(key => [key, process.env[key]])
+  trackedEnvKeys.map((key) => [key, process.env[key]])
 ) as Record<EnvKey, string | undefined>;
 const originalReadFileSync = fs.readFileSync;
 
@@ -29,7 +29,11 @@ test.afterEach(() => {
   fs.readFileSync = originalReadFileSync;
 });
 
-async function loadAuthModule({ openaiKey, codexKey, authPath }: Record<string, unknown> = {}): Promise<AuthModule> {
+async function loadAuthModule({
+  openaiKey,
+  codexKey,
+  authPath
+}: Record<string, unknown> = {}): Promise<AuthModule> {
   applyEnv("OPENAI_API_KEY", openaiKey as string | null | undefined);
   applyEnv("CODEX_API_KEY", codexKey as string | null | undefined);
   applyEnv("CODEX_AUTH", authPath as string | null | undefined);

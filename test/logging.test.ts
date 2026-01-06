@@ -52,13 +52,17 @@ test("logRun writes serialized entries to the log stream and console", async () 
     "log stream write should include structured payload with newline"
   );
   assert.equal(messages.length, 1, "console logger should mirror each entry");
-  assert.match(messages[0], /^\[.*\] \[run abc123\] Applied diff/, "console output should include the timestamp, run id and message");
+  assert.match(
+    messages[0],
+    /^\[.*\] \[run abc123\] Applied diff/,
+    "console output should include the timestamp, run id and message"
+  );
 });
 
-  test("logRun falls back to console-only logging when the log file cannot be opened", async () => {
-    fs.createWriteStream = (() => {
-      throw new Error("permission denied");
-    }) as unknown as typeof fs.createWriteStream;
+test("logRun falls back to console-only logging when the log file cannot be opened", async () => {
+  fs.createWriteStream = (() => {
+    throw new Error("permission denied");
+  }) as unknown as typeof fs.createWriteStream;
 
   const errors: string[] = [];
   console.error = (message: unknown) => {
@@ -77,5 +81,9 @@ test("logRun writes serialized entries to the log stream and console", async () 
   logRun("fallback", "capture output", undefined);
 
   assert.equal(messages.length, 1, "logRun should still emit console output without a file stream");
-  assert.match(messages[0], /^\[.*\] \[run fallback\] capture output/, "fallback console line should match normal format");
+  assert.match(
+    messages[0],
+    /^\[.*\] \[run fallback\] capture output/,
+    "fallback console line should match normal format"
+  );
 });
