@@ -7,7 +7,9 @@ import { FALLBACK_MODELS } from "../lib/config.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const modelsModuleHref = pathToFileURL(path.join(__dirname, "..", "lib", "models.js")).href;
+const modelsModuleHref = pathToFileURL(
+  path.join(__dirname, "..", "lib", "backends", "codex", "models.js")
+).href;
 
 const originalFetch = global.fetch;
 const trackedEnvKeys = ["OPENAI_API_KEY", "CODEXUI_MODEL_CACHE_MS"] as const;
@@ -28,7 +30,7 @@ test.afterEach(() => {
 });
 
 type FetchImpl = typeof fetch | null | undefined;
-type ModelsModule = typeof import("../lib/models.js");
+type ModelsModule = typeof import("../lib/backends/codex/models.js");
 
 async function loadModelsModule({
   apiKey,
