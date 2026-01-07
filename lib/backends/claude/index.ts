@@ -101,10 +101,19 @@ function parseSseBlock(raw: string): SseEvent | null {
 }
 
 export function createClaudeBackend(config: BackendConfig): Backend {
-  void config;
+  const systemPrompt = [
+    `Working directory: ${config.workingDirectory}`,
+    `Network access enabled: ${config.networkAccessEnabled ? "yes" : "no"}`,
+    `Sandbox mode: ${config.sandboxMode}`,
+    `Approval policy: ${config.approvalPolicy}`
+  ].join("\n");
+
   return {
     name: "claude",
     async streamRun(prompt: string) {
+      if (!config.networkAccessEnabled) {
+        throw new Error("Claude backend requires network access");
+      }
       const apiKey = getClaudeApiKey();
       if (!apiKey) {
         throw new Error("Missing Claude API key (set CODEXUI_CLAUDE_API_KEY or ANTHROPIC_API_KEY)");
@@ -122,6 +131,7 @@ export function createClaudeBackend(config: BackendConfig): Backend {
           model,
           max_tokens: 2048,
           stream: true,
+          system: systemPrompt,
           messages: [{ role: "user", content: prompt }]
         })
       });

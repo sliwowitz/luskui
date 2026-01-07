@@ -65,3 +65,16 @@ test("Claude backend rejects runs without an API key", async () => {
   });
   await assert.rejects(async () => backend.streamRun("hello"), /Missing Claude API key/);
 });
+
+test("Claude backend rejects runs when network access is disabled", async () => {
+  process.env.CODEXUI_CLAUDE_API_KEY = "test-key";
+  const { createClaudeBackend } = await import("../lib/backends/claude/index.js");
+  const backend = createClaudeBackend({
+    workingDirectory: "/tmp",
+    skipGitRepoCheck: true,
+    sandboxMode: "danger-full-access",
+    networkAccessEnabled: false,
+    approvalPolicy: "never"
+  });
+  await assert.rejects(async () => backend.streamRun("hello"), /requires network access/);
+});
