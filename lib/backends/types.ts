@@ -16,9 +16,9 @@ export type BackendEvent =
 export type BackendConfig = {
   workingDirectory: string;
   skipGitRepoCheck: boolean;
-  sandboxMode: "danger-full-access" | "sandbox" | string;
+  sandboxMode: "danger-full-access" | "sandbox";
   networkAccessEnabled: boolean;
-  approvalPolicy: "never" | "auto" | string;
+  approvalPolicy: "never" | "auto";
 };
 
 export type ModelSelectionPayload = { model?: unknown; effort?: unknown };
