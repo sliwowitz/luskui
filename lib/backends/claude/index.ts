@@ -116,7 +116,9 @@ export function createClaudeBackend(config: BackendConfig): Backend {
       }
       const apiKey = getClaudeApiKey();
       if (!apiKey) {
-        throw new Error("Missing Claude API key (set CODEXUI_CLAUDE_API_KEY or ANTHROPIC_API_KEY)");
+        throw new Error(
+          "Missing Claude API key (set CODEXUI_CLAUDE_API_KEY, ANTHROPIC_API_KEY, or CLAUDE_API_KEY)"
+        );
       }
 
       const model = getActiveModel() || "claude-3-5-sonnet-20240620";
