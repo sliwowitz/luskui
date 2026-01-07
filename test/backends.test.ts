@@ -37,3 +37,44 @@ test("getBackend rejects unsupported backend ids", async () => {
     });
   }, /Unsupported backend/);
 });
+
+test("getBackend selects the Claude adapter when configured", async () => {
+  process.env.CODEXUI_BACKEND = "claude";
+  const { getBackend } = await import("../lib/backends/index.js");
+  const backend = getBackend({
+    workingDirectory: "/tmp",
+    skipGitRepoCheck: true,
+    sandboxMode: "danger-full-access",
+    networkAccessEnabled: true,
+    approvalPolicy: "never"
+  });
+  assert.equal(backend.name, "claude");
+});
+
+test("Claude backend rejects runs without an API key", async () => {
+  delete process.env.CODEXUI_CLAUDE_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.CLAUDE_API_KEY;
+  const { createClaudeBackend } = await import("../lib/backends/claude/index.js");
+  const backend = createClaudeBackend({
+    workingDirectory: "/tmp",
+    skipGitRepoCheck: true,
+    sandboxMode: "danger-full-access",
+    networkAccessEnabled: true,
+    approvalPolicy: "never"
+  });
+  await assert.rejects(async () => backend.streamRun("hello"), /Missing Claude API key/);
+});
+
+test("Claude backend rejects runs when network access is disabled", async () => {
+  process.env.CODEXUI_CLAUDE_API_KEY = "test-key";
+  const { createClaudeBackend } = await import("../lib/backends/claude/index.js");
+  const backend = createClaudeBackend({
+    workingDirectory: "/tmp",
+    skipGitRepoCheck: true,
+    sandboxMode: "danger-full-access",
+    networkAccessEnabled: false,
+    approvalPolicy: "never"
+  });
+  await assert.rejects(async () => backend.streamRun("hello"), /requires network access/);
+});
