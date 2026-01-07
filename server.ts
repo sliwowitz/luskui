@@ -1,5 +1,4 @@
 import express, { Request, Response } from "express";
-import { Codex } from "@openai/codex-sdk";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,45 +21,8 @@ import {
   getLastDiff,
   getCommands
 } from "./lib/runStore.js";
-import {
-  getModelSettings,
-  getActiveModel,
-  getActiveEffort,
-  updateModelSelection
-} from "./lib/models.js";
-
-type CommandEventItem = {
-  id?: string;
-  type?: string;
-  text?: string;
-  message?: string;
-  command?: string;
-  aggregated_output?: string;
-  exit_code?: number;
-  status?: string;
-  patch?: string;
-  diff?: { patch?: string };
-  changes?: Array<{ patch?: string }>;
-};
-
-type StreamEvent = {
-  type?: string;
-  thread_id?: string;
-  usage?: unknown;
-  error?: { message?: string } | string;
-  item?: CommandEventItem;
-  diff?: { patch?: string };
-};
-
-type ModelSelectionPayload = { model?: unknown; effort?: unknown };
-
-type RunStream = AsyncIterable<StreamEvent> & {
-  [Symbol.asyncIterator](): AsyncIterator<StreamEvent>;
-};
-
-type ThreadRunner = {
-  runStreamed: (prompt: string) => Promise<{ events: RunStream }>;
-};
+import { getBackend } from "./lib/backends/index.js";
+import type { BackendEvent, ModelSelectionPayload } from "./lib/backends/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -69,8 +31,13 @@ const staticDir = path.join(__dirname, "static");
 const app = express();
 app.use(express.json());
 app.use("/static", express.static(staticDir));
-
-const codex = new Codex();
+const backend = getBackend({
+  workingDirectory: REPO_ROOT,
+  skipGitRepoCheck: SKIP_GIT_REPO_CHECK,
+  sandboxMode: "danger-full-access",
+  networkAccessEnabled: true,
+  approvalPolicy: "never"
+});
 
 app.get("/", (_req: Request, res: Response) => res.redirect("/static/index.html"));
 
@@ -96,138 +63,41 @@ app.get("/api/stream/:id", async (req: Request, res: Response) => {
   const send = (payload: unknown): void => {
     res.write(`data: ${JSON.stringify(payload)}\n\n`);
   };
-  const commandOutputState = new Map<string, { flushed: number }>();
   let clientClosed = false;
 
   logRun(id, "SSE stream opened");
   req.on("close", () => {
     if (!clientClosed) {
       clientClosed = true;
-      logRun(id, "HTTP client disconnected; stopping Codex stream");
+      logRun(id, `HTTP client disconnected; stopping ${backend.name} stream`);
     }
   });
 
-  const thread: ThreadRunner = codex.startThread({
-    workingDirectory: REPO_ROOT,
-    skipGitRepoCheck: SKIP_GIT_REPO_CHECK,
-    sandboxMode: "danger-full-access",
-    networkAccessEnabled: true,
-    approvalPolicy: "never",
-    model: getActiveModel() || undefined,
-    modelReasoningEffort: getActiveEffort() || undefined
-  });
-
-  const handleCommandItem = (eventType: string, item?: CommandEventItem): void => {
-    if (!item?.id) return;
-    const itemId = String(item.id);
-    const existing = commandOutputState.get(itemId);
-    if (!existing) {
-      commandOutputState.set(itemId, { flushed: 0 });
-      const cmdLine = item.command || "command";
-      appendCommandLog(id, `$ ${cmdLine}`);
-      send({ type: "tool.start", tool: { name: cmdLine, args: [] } });
-    }
-    const state = commandOutputState.get(itemId);
-    const output = item.aggregated_output ?? "";
-    if (state && output.length > state.flushed) {
-      const chunk = output.slice(state.flushed);
-      state.flushed = output.length;
-      appendCommandLog(id, chunk);
-      send({ type: "tool.stdout", text: chunk });
-    }
-    if (eventType === "item.completed") {
-      send({
-        type: "tool.end",
-        tool: { name: item.command || "command", args: [] },
-        exit_code: item.exit_code,
-        status: item.status
-      });
-      commandOutputState.delete(itemId);
-    }
-  };
-
-  const emitThinking = (text?: string | null): void => {
-    if (!text) return;
-    send({ type: "thinking", text });
-  };
-  const emitMessage = (text?: string | null): void => {
-    if (!text) return;
-    send({ type: "message", text });
-  };
-  const emitDiff = (patch?: string | null): void => {
-    if (!patch) return;
-    setLastDiff(id, patch);
-    send({ type: "diff", diff: { patch } });
-  };
-
-  const translateEvent = (ev: StreamEvent): boolean => {
-    switch (ev.type) {
-      case "thread.started":
-        logRun(id, "Thread started", { threadId: ev.thread_id });
-        return true;
-      case "turn.started":
-        send({ type: "status", text: "Running…" });
-        return true;
-      case "turn.completed":
-        logRun(id, "Turn completed", ev.usage);
-        return true;
-      case "turn.failed":
-        throw new Error(
-          typeof ev.error === "string" ? ev.error : ev.error?.message || "Codex turn failed"
-        );
-      case "item.started":
-      case "item.updated":
-      case "item.completed": {
-        const item = ev.item;
-        if (!item) return true;
-        switch (item.type) {
-          case "reasoning":
-            emitThinking(item.text);
-            break;
-          case "agent_message":
-            if (ev.type === "item.completed") emitMessage(item.text);
-            break;
-          case "command_execution":
-            handleCommandItem(ev.type, item);
-            break;
-          case "file_change": {
-            const patch =
-              item.patch ||
-              item.diff?.patch ||
-              (Array.isArray(item.changes)
-                ? item.changes.find((change) => change.patch)?.patch
-                : null);
-            if (patch) {
-              emitDiff(patch);
-            }
-            break;
-          }
-          case "error":
-            send({ type: "message", text: item.message || "Agent error" });
-            break;
-          default:
-            break;
-        }
-        return true;
-      }
-      case "error":
-        throw new Error(
-          typeof ev.error === "string" ? ev.error : ev.error?.message || "Codex stream error"
-        );
+  const handleBackendEvent = (event: BackendEvent): void => {
+    switch (event.type) {
+      case "tool.start":
+        appendCommandLog(id, `$ ${event.tool.name}`);
+        send(event);
+        return;
+      case "tool.stdout":
+      case "tool.stderr":
+        appendCommandLog(id, event.text);
+        send(event);
+        return;
+      case "tool.end":
+        send(event);
+        return;
+      case "diff":
+        setLastDiff(id, event.diff.patch);
+        send(event);
+        return;
       default:
-        if (ev.type === "diff" && ev.diff?.patch) {
-          emitDiff(ev.diff.patch);
-          return true;
-        }
-        if (ev.type && typeof ev.type === "string") {
-          send(ev);
-        }
-        return true;
+        send(event);
     }
   };
 
   try {
-    const { events } = await thread.runStreamed(run.prompt);
+    const events = await backend.streamRun(run.prompt);
     const iterator = events[Symbol.asyncIterator]();
     while (true) {
       const { value, done } = await iterator.next();
@@ -235,14 +105,14 @@ app.get("/api/stream/:id", async (req: Request, res: Response) => {
         if (clientClosed) await iterator.return?.();
         break;
       }
-      translateEvent(value);
+      handleBackendEvent(value);
     }
     if (!clientClosed) {
-      logRun(id, "Codex run completed");
+      logRun(id, `${backend.name} run completed`);
       send({ type: "done" });
     }
   } catch (e) {
-    logRun(id, "Codex run error", e instanceof Error ? e.stack || e.message : e);
+    logRun(id, `${backend.name} run error`, e instanceof Error ? e.stack || e.message : e);
     send({ type: "error", error: String(e instanceof Error ? e.message : e) });
   } finally {
     logRun(id, "SSE stream closing");
@@ -258,12 +128,12 @@ app.get("/api/cmd-log/:id", (req: Request, res: Response) => {
 });
 
 app.get("/api/model", async (_req: Request, res: Response) => {
-  res.json(await getModelSettings());
+  res.json(await backend.getModelSettings());
 });
 
 app.post("/api/model", async (req: Request, res: Response) => {
-  updateModelSelection(req.body as ModelSelectionPayload);
-  const settings = await getModelSettings();
+  backend.updateModelSelection(req.body as ModelSelectionPayload);
+  const settings = await backend.getModelSettings();
   logRun("model", "Model selection updated", {
     activeModel: settings.model || "(default)",
     defaultModel: settings.defaultModel || "(none)",
@@ -360,5 +230,5 @@ app.post("/api/save", (req: Request, res: Response) => {
 });
 
 app.listen(PORT, HOST, () =>
-  console.log(`Codex UI (SDK streaming) on http://${HOST}:${PORT} — repo ${REPO_ROOT}`)
+  console.log(`Agent UI (SDK streaming) on http://${HOST}:${PORT} — repo ${REPO_ROOT}`)
 );

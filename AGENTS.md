@@ -129,3 +129,11 @@ The app reads API keys from `OPENAI_API_KEY`, `CODEX_API_KEY`, or `~/.codex/auth
 For aspirational UI ideas, see `ROADMAP.md`.
 
 This document reflects the current state of the repo so agents and humans know where logic lives and how to extend it safely.
+
+## Contribution requirements
+
+Before committing changes, run the same checks as CI:
+
+- `npm run lint`
+- `npm run format:check`
+- `npm test`

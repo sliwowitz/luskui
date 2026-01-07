@@ -5,8 +5,8 @@ import {
   FALLBACK_MODELS,
   MODEL_CACHE_TTL_MS,
   type ReasoningEffort
-} from "./config.js";
-import { getAccessToken } from "./auth.js";
+} from "../../config.js";
+import { getAccessToken } from "../../auth.js";
 
 type ModelList = string[] | null;
 
