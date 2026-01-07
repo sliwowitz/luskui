@@ -13,4 +13,10 @@ export function getBackend(config: BackendConfig): Backend {
   }
 }
 
-export type { Backend, BackendConfig, BackendEvent, BackendModelSettings, ModelSelectionPayload } from "./types.js";
+export type {
+  Backend,
+  BackendConfig,
+  BackendEvent,
+  BackendModelSettings,
+  ModelSelectionPayload
+} from "./types.js";

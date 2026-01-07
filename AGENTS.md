@@ -132,7 +132,8 @@ This document reflects the current state of the repo so agents and humans know w
 
 ## Contribution requirements
 
-Before committing changes, run the full test suite and the linter:
+Before committing changes, run the same checks as CI:
 
-- `npm test`
 - `npm run lint`
+- `npm run format:check`
+- `npm test`
