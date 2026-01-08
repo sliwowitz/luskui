@@ -139,8 +139,26 @@ export function createMistralBackend(config: BackendConfig): Backend {
             case "conversation.response.started":
               yield { type: "status", text: "Running…" };
               break;
-            case "conversation.response.error":
-              throw new Error("Mistral stream error");
+            case "conversation.response.error": {
+              let message = "Mistral stream error";
+              const detail = (payload as { info?: unknown; content?: unknown }).info ??
+                             (payload as { info?: unknown; content?: unknown }).content ??
+                             payload;
+              if (detail !== undefined) {
+                const detailText =
+                  typeof detail === "string"
+                    ? detail
+                    : (() => {
+                        try {
+                          return JSON.stringify(detail);
+                        } catch {
+                          return String(detail);
+                        }
+                      })();
+                message += `: ${detailText}`;
+              }
+              throw new Error(message);
+            }
             case "message.output.delta": {
               const content = payload.content;
               for (const item of handleContent(content)) {
