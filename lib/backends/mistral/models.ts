@@ -7,7 +7,7 @@ const FALLBACK_MISTRAL_MODELS = [
   "mistral-small-latest"
 ];
 
-let activeModel: string | null = DEFAULT_MISTRAL_MODEL || null;
+let activeModel: string | null = DEFAULT_MISTRAL_MODEL;
 
 export function getActiveModel(): string | null {
   return activeModel;

@@ -110,6 +110,8 @@ export function createMistralBackend(config: BackendConfig): Backend {
       const mistral = new Mistral({ apiKey });
       const model = getActiveModel() || "mistral-large-latest";
 
+      // Using Mistral beta API for conversations.
+      // This API is part of @mistralai/mistralai ^1.11.0 and provides streaming conversation support.
       const stream = await mistral.beta.conversations.startStream({
         inputs: [
           {
@@ -141,9 +143,10 @@ export function createMistralBackend(config: BackendConfig): Backend {
               break;
             case "conversation.response.error": {
               let message = "Mistral stream error";
-              const detail = (payload as { info?: unknown; content?: unknown }).info ??
-                             (payload as { info?: unknown; content?: unknown }).content ??
-                             payload;
+              const detail =
+                (payload as { info?: unknown; content?: unknown }).info ??
+                (payload as { info?: unknown; content?: unknown }).content ??
+                payload;
               if (detail !== undefined) {
                 const detailText =
                   typeof detail === "string"
@@ -186,7 +189,7 @@ export function createMistralBackend(config: BackendConfig): Backend {
               break;
             }
             case "tool.execution.done": {
-              const id = payload.id || `${payload.name || "tool"}`;
+              const id = payload.id || `${payload.name || "tool"}-${payload.arguments || ""}`;
               const tool = toolState.get(id) || {
                 name: payload.name || "tool",
                 args: formatToolArgs("")
@@ -195,8 +198,9 @@ export function createMistralBackend(config: BackendConfig): Backend {
               toolState.delete(id);
               break;
             }
+            case "function.call.started":
             case "function.call.delta": {
-              const id = payload.id || `${payload.name || "function"}`;
+              const id = payload.id || `${payload.name || "function"}-${payload.arguments || ""}`;
               let tool = toolState.get(id);
               if (!tool) {
                 tool = {
@@ -208,6 +212,16 @@ export function createMistralBackend(config: BackendConfig): Backend {
               } else if (payload.arguments) {
                 tool.args = formatToolArgs(payload.arguments);
               }
+              break;
+            }
+            case "function.call.done": {
+              const id = payload.id || `${payload.name || "function"}-${payload.arguments || ""}`;
+              const tool = toolState.get(id) || {
+                name: payload.name || "function",
+                args: formatToolArgs("")
+              };
+              yield { type: "tool.end", tool, status: "completed" };
+              toolState.delete(id);
               break;
             }
             case "conversation.response.done": {

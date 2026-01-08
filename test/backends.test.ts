@@ -78,3 +78,43 @@ test("Claude backend rejects runs when network access is disabled", async () => 
   });
   await assert.rejects(async () => backend.streamRun("hello"), /requires network access/);
 });
+
+test("getBackend selects the Mistral adapter when configured", async () => {
+  process.env.CODEXUI_BACKEND = "mistral";
+  const { getBackend } = await import("../lib/backends/index.js");
+  const backend = getBackend({
+    workingDirectory: "/tmp",
+    skipGitRepoCheck: true,
+    sandboxMode: "danger-full-access",
+    networkAccessEnabled: true,
+    approvalPolicy: "never"
+  });
+  assert.equal(backend.name, "mistral");
+});
+
+test("Mistral backend rejects runs without an API key", async () => {
+  delete process.env.CODEXUI_MISTRAL_API_KEY;
+  delete process.env.MISTRAL_API_KEY;
+  const { createMistralBackend } = await import("../lib/backends/mistral/index.js");
+  const backend = createMistralBackend({
+    workingDirectory: "/tmp",
+    skipGitRepoCheck: true,
+    sandboxMode: "danger-full-access",
+    networkAccessEnabled: true,
+    approvalPolicy: "never"
+  });
+  await assert.rejects(async () => backend.streamRun("hello"), /Missing Mistral API key/);
+});
+
+test("Mistral backend rejects runs when network access is disabled", async () => {
+  process.env.CODEXUI_MISTRAL_API_KEY = "test-key";
+  const { createMistralBackend } = await import("../lib/backends/mistral/index.js");
+  const backend = createMistralBackend({
+    workingDirectory: "/tmp",
+    skipGitRepoCheck: true,
+    sandboxMode: "danger-full-access",
+    networkAccessEnabled: false,
+    approvalPolicy: "never"
+  });
+  await assert.rejects(async () => backend.streamRun("hello"), /requires network access/);
+});
