@@ -109,15 +109,17 @@ These env vars influence behaviour (all optional):
 | `REPO_ROOT` | Working directory passed to Codex threads (default `/workspace`). |
 | `HOST` / `PORT` | Express bind address/port (defaults `0.0.0.0:7860`). |
 | `CODEXUI_LOG` | Override the log file path (defaults to `/opt/codexui/codexui.log`). |
-| `CODEXUI_BACKEND` | Select the active backend (`codex` or `claude`). |
+| `CODEXUI_BACKEND` | Select the active backend (`codex`, `claude`, or `mistral`). |
 | `CODEXUI_MODEL`, `CODEXUI_EFFORT` | Force default model/effort without editing `~/.codex/config.toml`. |
 | `CODEXUI_CLAUDE_MODEL` | Override the default Claude model when using the Claude backend. |
+| `CODEXUI_MISTRAL_MODEL` | Override the default Mistral model when using the Mistral backend. |
 | `CODEXUI_SKIP_GIT_CHECK` | Skip verifying that `REPO_ROOT` contains a Git repo (enabled automatically if `.git` missing). |
 | `CODEXUI_MODEL_CACHE_MS` | TTL for cached model lists (defaults to 5 minutes). |
 | `CODEXUI_MODEL_FETCH_TIMEOUT_MS` | Timeout for the model list request (defaults to 5 seconds). |
 
 The app reads OpenAI API keys from `OPENAI_API_KEY`, `CODEX_API_KEY`, or `~/.codex/auth.json`. For Claude, set
-`CODEXUI_CLAUDE_API_KEY`, `ANTHROPIC_API_KEY`, or `CLAUDE_API_KEY`.
+`CODEXUI_CLAUDE_API_KEY`, `ANTHROPIC_API_KEY`, or `CLAUDE_API_KEY`. For Mistral, set `CODEXUI_MISTRAL_API_KEY`
+or `MISTRAL_API_KEY`.
 
 ---
 
