@@ -24,9 +24,39 @@ function getMistralApiKey(): string | null {
   return process.env.CODEXUI_MISTRAL_API_KEY || process.env.MISTRAL_API_KEY || null;
 }
 
-function formatToolArgs(raw: string | undefined): string[] {
-  if (!raw) return [];
-  return [raw];
+function formatToolArgs(raw: unknown): string[] {
+  if (raw === null || raw === undefined) {
+    return [];
+  }
+
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    // If the string looks like JSON, try to parse and format it.
+    try {
+      const parsed = JSON.parse(trimmed);
+      return formatToolArgs(parsed);
+    } catch {
+      return [raw];
+    }
+  }
+
+  if (typeof raw === "number" || typeof raw === "boolean") {
+    return [String(raw)];
+  }
+
+  if (Array.isArray(raw) || typeof raw === "object") {
+    try {
+      return [JSON.stringify(raw, null, 2)];
+    } catch {
+      return [String(raw)];
+    }
+  }
+
+  return [String(raw)];
 }
 
 function* handleContent(content: unknown): Generator<BackendEvent> {
