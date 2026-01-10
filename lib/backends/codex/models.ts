@@ -59,8 +59,14 @@ function getClientVersion(): string {
     if (typeof parsed?.version === "string" && parsed.version.trim()) {
       return parsed.version.trim();
     }
-  } catch {
-    // ignore
+    console.debug(
+      'getClientVersion: package.json does not contain a valid "version" field, falling back to "0.0.0".'
+    );
+  } catch (error) {
+    console.debug(
+      'getClientVersion: failed to read or parse package.json, falling back to "0.0.0".',
+      error instanceof Error ? error.message : error
+    );
   }
   return "0.0.0";
 }
