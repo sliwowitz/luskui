@@ -470,6 +470,17 @@
     function renderModelSelect(){
       const select = modelSelect;
       select.innerHTML = '';
+      if (!settingsState.availableModels.length) {
+        const label = settingsState.defaultModel
+          ? `Model list unavailable (using ${settingsState.defaultModel})`
+          : 'Model list unavailable (using default)';
+        const option = new Option(label, '');
+        option.disabled = true;
+        option.selected = true;
+        select.appendChild(option);
+        select.disabled = true;
+        return;
+      }
       const autoLabel = settingsState.defaultModel ? `Auto (${settingsState.defaultModel})` : 'Auto (config)';
       select.appendChild(new Option(autoLabel, ''));
       settingsState.availableModels.forEach(model=>{
@@ -485,11 +496,21 @@
 
     function renderEffortSelect(){
       const select = effortSelect;
-      const options = settingsState.effortOptions?.length ? settingsState.effortOptions : ["minimal","low","medium","high"];
       select.innerHTML = '';
+      if (!settingsState.effortOptions?.length) {
+        const label = settingsState.defaultEffort
+          ? `Effort list unavailable (using ${settingsState.defaultEffort})`
+          : 'Effort list unavailable (using default)';
+        const option = new Option(label, '');
+        option.disabled = true;
+        option.selected = true;
+        select.appendChild(option);
+        select.disabled = true;
+        return;
+      }
       const autoLabel = settingsState.defaultEffort ? `Auto (${settingsState.defaultEffort})` : 'Auto (config)';
       select.appendChild(new Option(autoLabel, ''));
-      options.forEach(opt=>{
+      settingsState.effortOptions.forEach(opt=>{
         select.appendChild(new Option(toTitleCase(opt), opt));
       });
       select.value = settingsState.effort || '';

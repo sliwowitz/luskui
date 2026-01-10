@@ -1,13 +1,81 @@
+import { MODEL_CACHE_TTL_MS } from "../../config.js";
+
 const DEFAULT_MISTRAL_MODEL =
   process.env.CODEXUI_MISTRAL_MODEL || process.env.CODEXUI_MODEL || "mistral-large-latest";
 
-const FALLBACK_MISTRAL_MODELS = [
-  "mistral-large-latest",
-  "mistral-medium-latest",
-  "mistral-small-latest"
-];
-
 let activeModel: string | null = DEFAULT_MISTRAL_MODEL;
+let cachedModels: { list: string[]; fetchedAt: number } | null = null;
+let inflightModelFetch: Promise<string[]> | null = null;
+
+interface ModelEntry {
+  id?: string;
+}
+
+interface ModelResponse {
+  data?: ModelEntry[];
+}
+
+function getMistralApiKey(): string | null {
+  return process.env.CODEXUI_MISTRAL_API_KEY || process.env.MISTRAL_API_KEY || null;
+}
+
+async function fetchModelsFromApi(): Promise<string[] | null> {
+  if (typeof fetch !== "function") return null;
+  const apiKey = getMistralApiKey();
+  if (!apiKey) return null;
+  const controller = new AbortController();
+  const timeoutMs = Number(process.env.CODEXUI_MODEL_FETCH_TIMEOUT_MS || 5000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch("https://api.mistral.ai/v1/models", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`
+      },
+      signal: controller.signal
+    });
+    if (!resp.ok) {
+      throw new Error(`Model request failed (${resp.status})`);
+    }
+    const payload = (await resp.json()) as ModelResponse;
+    if (!payload || !Array.isArray(payload.data)) return null;
+    const seen = new Set<string>();
+    for (const entry of payload.data) {
+      const id = typeof entry?.id === "string" ? entry.id : null;
+      if (!id) continue;
+      seen.add(id);
+    }
+    return Array.from(seen).sort((a, b) => a.localeCompare(b));
+  } catch (error) {
+    console.warn("Failed to fetch Mistral models", error instanceof Error ? error.message : error);
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function getAvailableModels(): Promise<string[]> {
+  const now = Date.now();
+  if (cachedModels && now - cachedModels.fetchedAt < MODEL_CACHE_TTL_MS) {
+    return cachedModels.list;
+  }
+  if (!inflightModelFetch) {
+    inflightModelFetch = (async () => {
+      const remote = await fetchModelsFromApi();
+      const models: string[] = remote && remote.length ? remote : [];
+      cachedModels = { list: models, fetchedAt: Date.now() };
+      return models;
+    })()
+      .catch(() => {
+        cachedModels = { list: [], fetchedAt: Date.now() };
+        return [];
+      })
+      .finally(() => {
+        inflightModelFetch = null;
+      });
+  }
+  return inflightModelFetch;
+}
 
 export function getActiveModel(): string | null {
   return activeModel;
@@ -31,9 +99,7 @@ export async function getModelSettings(): Promise<{
   defaultEffort: null;
   effortOptions: readonly string[];
 }> {
-  const availableModels = Array.from(new Set([DEFAULT_MISTRAL_MODEL, ...FALLBACK_MISTRAL_MODELS]))
-    .filter(Boolean)
-    .sort((a, b) => a.localeCompare(b));
+  const availableModels = await getAvailableModels();
   return {
     model: activeModel,
     defaultModel: DEFAULT_MISTRAL_MODEL || null,

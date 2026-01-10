@@ -1,18 +1,14 @@
 import {
   DEFAULT_MODEL,
   DEFAULT_EFFORT,
-  EFFORT_OPTIONS,
-  FALLBACK_MODELS,
   MODEL_CACHE_TTL_MS,
   type ReasoningEffort
 } from "../../config.js";
 import { getAccessToken } from "../../auth.js";
 
-type ModelList = string[] | null;
-
 let activeModel: string | null = DEFAULT_MODEL;
 let activeEffort: ReasoningEffort | null = DEFAULT_EFFORT;
-let cachedModels: { list: ModelList; fetchedAt: number } = { list: null, fetchedAt: 0 };
+let cachedModels: { list: string[]; fetchedAt: number } | null = null;
 let inflightModelFetch: Promise<string[]> | null = null;
 
 interface ModelEntry {
@@ -62,24 +58,19 @@ async function fetchModelsFromApi(): Promise<string[] | null> {
 
 export async function getAvailableModels(): Promise<string[]> {
   const now = Date.now();
-  if (cachedModels.list && now - cachedModels.fetchedAt < MODEL_CACHE_TTL_MS) {
+  if (cachedModels && now - cachedModels.fetchedAt < MODEL_CACHE_TTL_MS) {
     return cachedModels.list;
   }
   if (!inflightModelFetch) {
     inflightModelFetch = (async () => {
       const remote = await fetchModelsFromApi();
-      const combined: string[] = remote && remote.length ? remote : [];
-      const defaults = FALLBACK_MODELS.filter(Boolean);
-      const merged = Array.from(new Set<string>([...combined, ...defaults])).sort((a, b) =>
-        a.localeCompare(b)
-      );
-      cachedModels = { list: merged, fetchedAt: Date.now() };
-      return merged;
+      const models: string[] = remote && remote.length ? remote : [];
+      cachedModels = { list: models, fetchedAt: Date.now() };
+      return models;
     })()
       .catch(() => {
-        const merged = Array.from(new Set<string>(FALLBACK_MODELS));
-        cachedModels = { list: merged, fetchedAt: Date.now() };
-        return merged;
+        cachedModels = { list: [], fetchedAt: Date.now() };
+        return [];
       })
       .finally(() => {
         inflightModelFetch = null;
@@ -113,9 +104,7 @@ export function updateModelSelection(selection: ModelSelection = {}): void {
     activeEffort = null;
   } else if (typeof effort === "string") {
     const normalized = effort.trim().toLowerCase();
-    if ((EFFORT_OPTIONS as readonly string[]).includes(normalized)) {
-      activeEffort = normalized as ReasoningEffort;
-    }
+    activeEffort = (normalized || null) as ReasoningEffort | null;
   }
 }
 
@@ -134,6 +123,6 @@ export async function getModelSettings(): Promise<{
     availableModels: models,
     effort: activeEffort,
     defaultEffort: DEFAULT_EFFORT,
-    effortOptions: EFFORT_OPTIONS
+    effortOptions: []
   };
 }
