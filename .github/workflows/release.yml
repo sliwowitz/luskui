@@ -30,7 +30,7 @@ jobs:
         run: npm prune --omit=dev
 
       - name: Create release artifact
-        run: tar -czf codexui-dist.tar.gz dist node_modules package.json
+        run: tar -czf codexui-dist.tar.gz dist node_modules package.json package-lock.json
 
       - name: Publish latest release asset
         uses: softprops/action-gh-release@v2

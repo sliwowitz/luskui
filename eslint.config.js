@@ -6,7 +6,7 @@ import globals from "globals";
 
 export default [
   {
-    ignores: ["node_modules/**", "static/marked.min.js"]
+    ignores: ["node_modules/**", "static/marked.min.js", "dist/**"]
   },
   {
     files: ["**/*.{ts,js}"],
