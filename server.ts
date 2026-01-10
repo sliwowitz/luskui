@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 
+import { hydrateEnv } from "./lib/env.js";
 import {
   REPO_ROOT,
   HOST,
@@ -27,6 +28,8 @@ import type { BackendEvent, ModelSelectionPayload } from "./lib/backends/types.j
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const staticDir = path.join(__dirname, "static");
+
+hydrateEnv();
 
 const app = express();
 app.use(express.json());
