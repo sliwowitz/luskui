@@ -4,6 +4,9 @@ import path from "node:path";
 
 import { REPO_ROOT_ABS } from "./config.js";
 
+// High-level: read a minimal subset of Vibe CLI config for the UI.
+// We intentionally parse only the fields the UI needs and keep the parser lightweight.
+
 export type VibeConfig = {
   active_model?: string;
   providers?: Record<string, unknown>;
@@ -14,6 +17,10 @@ export type VibeConfig = {
 };
 
 let cachedConfig: VibeConfig | null | undefined;
+
+export function clearVibeConfigCache(): void {
+  cachedConfig = undefined;
+}
 
 function findVibeConfigPath(): string | null {
   const repoConfig = path.join(REPO_ROOT_ABS, ".vibe", "config.toml");
