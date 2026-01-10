@@ -21,15 +21,15 @@ export function stripQuotes(value: string): string {
   if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
     try {
       const parsed = JSON.parse(trimmed);
-      return typeof parsed === "string" ? unescapeValue(parsed) : String(parsed);
+      return typeof parsed === "string" ? parsed : String(parsed);
     } catch {
       return unescapeValue(trimmed.slice(1, -1));
     }
   }
   if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
-    return unescapeValue(trimmed.slice(1, -1));
+    return trimmed.slice(1, -1);
   }
-  return unescapeValue(trimmed);
+  return trimmed;
 }
 
 export function parseEnv(contents: string): EnvMap {
@@ -51,9 +51,18 @@ export function parseEnv(contents: string): EnvMap {
     const withoutExport = trimmed.startsWith("export ") ? trimmed.slice(7).trim() : trimmed;
     const equalsIndex = withoutExport.indexOf("=");
 
-    if (equalsIndex <= 0) {
+    if (equalsIndex < 0) {
       if (currentKey !== null) {
-        currentValue = `${currentValue ?? ""}\n${line}`;
+        currentValue = `${currentValue ?? ""}\n${trimmed}`;
+      }
+      continue;
+    }
+
+    if (equalsIndex === 0) {
+      if (currentKey !== null) {
+        env[currentKey] = stripQuotes(currentValue ?? "");
+        currentKey = null;
+        currentValue = null;
       }
       continue;
     }
@@ -78,8 +87,8 @@ export function parseEnv(contents: string): EnvMap {
 }
 
 function setIfMissing(key: string, value: string | null | undefined): void {
-  if (!value) return;
-  if (process.env[key]) return;
+  if (value === null || value === undefined) return;
+  if (process.env[key] !== undefined) return;
   process.env[key] = value;
 }
 
@@ -102,7 +111,7 @@ function loadEnvFile(filePath: string): void {
   }
 }
 
-function extractKeyFromObject(value: unknown, keys: string[]): string | null {
+function extractClaudeApiKey(value: unknown, keys: string[]): string | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
   for (const key of keys) {
@@ -112,7 +121,7 @@ function extractKeyFromObject(value: unknown, keys: string[]): string | null {
     }
   }
   if ("claudeAiOauth" in record && typeof record.claudeAiOauth === "object") {
-    return extractKeyFromObject(record.claudeAiOauth, ["accessToken", "access_token"]);
+    return extractClaudeApiKey(record.claudeAiOauth, ["accessToken", "access_token"]);
   }
   return null;
 }
@@ -122,13 +131,11 @@ function loadClaudeCredentials(filePath: string): void {
     if (!fs.existsSync(filePath)) return;
     const raw = fs.readFileSync(filePath, "utf8");
     const parsed = JSON.parse(raw);
-    const key = extractKeyFromObject(parsed, [
+    const key = extractClaudeApiKey(parsed, [
       "ANTHROPIC_API_KEY",
       "anthropic_api_key",
       "CLAUDE_API_KEY",
-      "claude_api_key",
-      "apiKey",
-      "api_key"
+      "claude_api_key"
     ]);
     if (!key) return;
     setIfMissing("ANTHROPIC_API_KEY", key);
@@ -143,17 +150,25 @@ export function hydrateEnv(): void {
   didHydrate = true;
   const home = process.env.HOME || os.homedir?.() || "";
   // Default per-user configuration directory for vibe-based tooling.
-  const vibeConfigDir = process.env.VIBE_CONFIG_DIR
-    ? path.isAbsolute(process.env.VIBE_CONFIG_DIR)
-      ? process.env.VIBE_CONFIG_DIR
-      : home
-        ? path.join(home, process.env.VIBE_CONFIG_DIR)
-        : path.resolve(process.env.VIBE_CONFIG_DIR)
-    : home
-      ? path.join(home, ".vibe")
-      : "";
+  const vibeConfigDir = resolveVibeConfigDir(home, process.env.VIBE_CONFIG_DIR);
   if (vibeConfigDir) loadEnvFile(path.join(vibeConfigDir, ".env"));
   if (home) {
     loadClaudeCredentials(path.join(home, ".claude", ".credentials.json"));
   }
+}
+
+function resolveVibeConfigDir(home: string, envDir: string | undefined): string {
+  if (envDir && envDir.trim()) {
+    if (path.isAbsolute(envDir)) {
+      return envDir;
+    }
+    if (home) {
+      return path.join(home, envDir);
+    }
+    return path.resolve(envDir);
+  }
+  if (home) {
+    return path.join(home, ".vibe");
+  }
+  return "";
 }

@@ -18,7 +18,8 @@ const trackedEnvKeys = [
   "MISTRAL_API_KEY",
   "ANTHROPIC_API_KEY",
   "CLAUDE_API_KEY",
-  "EXTRA_ENV"
+  "EXTRA_ENV",
+  "EMPTY_ENV"
 ] as const;
 type EnvKey = (typeof trackedEnvKeys)[number];
 
@@ -27,6 +28,7 @@ const originalEnv: Record<EnvKey, string | undefined> = Object.fromEntries(
 ) as Record<EnvKey, string | undefined>;
 
 const originalWarn = console.warn;
+const tempDirs: string[] = [];
 
 test.afterEach(() => {
   for (const key of trackedEnvKeys) {
@@ -37,6 +39,11 @@ test.afterEach(() => {
     }
   }
   console.warn = originalWarn;
+  while (tempDirs.length) {
+    const dir = tempDirs.pop();
+    if (!dir) continue;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 async function loadEnvModule(): Promise<EnvModule> {
@@ -45,7 +52,9 @@ async function loadEnvModule(): Promise<EnvModule> {
 }
 
 function makeTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "codexui-env-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codexui-env-"));
+  tempDirs.push(dir);
+  return dir;
 }
 
 test("parseEnv handles comments, export statements, multiline values, and escapes", async () => {
@@ -56,7 +65,7 @@ test("parseEnv handles comments, export statements, multiline values, and escape
       "export FOO=bar",
       "MULTI=line one",
       "line two",
-      String.raw`QUOTED="my\\\"secret\\\"key"`,
+      'QUOTED="my\\"secret\\"key"',
       "TRAILING="
     ].join("\n")
   );
@@ -73,7 +82,7 @@ test("hydrateEnv loads .env values without overwriting existing variables", asyn
   fs.mkdirSync(envDir, { recursive: true });
   fs.writeFileSync(
     path.join(envDir, ".env"),
-    ["MISTRAL_API_KEY=file-key", "EXTRA_ENV=from-file"].join("\n"),
+    ["MISTRAL_API_KEY=file-key", "EXTRA_ENV=from-file", "EMPTY_ENV="].join("\n"),
     "utf8"
   );
 
@@ -85,6 +94,7 @@ test("hydrateEnv loads .env values without overwriting existing variables", asyn
 
   assert.equal(process.env.MISTRAL_API_KEY, "existing-key");
   assert.equal(process.env.EXTRA_ENV, "from-file");
+  assert.equal(process.env.EMPTY_ENV, "");
 });
 
 test("hydrateEnv reads Claude access tokens from credentials JSON", async () => {
@@ -133,13 +143,19 @@ test("hydrateEnv logs failures when credential files are malformed", async () =>
   fs.writeFileSync(path.join(claudeDir, ".credentials.json"), "{invalid", "utf8");
 
   process.env.HOME = homeDir;
-  let warned = false;
-  console.warn = () => {
-    warned = true;
+  const warnings: string[] = [];
+  console.warn = (message: string) => {
+    warnings.push(message);
   };
 
   const { hydrateEnv } = await loadEnvModule();
   hydrateEnv();
 
-  assert.equal(warned, true);
+  assert.equal(warnings.length > 0, true);
+  assert.equal(
+    warnings.some((warning) => warning.includes("Failed to read Claude credentials")),
+    true
+  );
+  assert.equal(process.env.ANTHROPIC_API_KEY, undefined);
+  assert.equal(process.env.CLAUDE_API_KEY, undefined);
 });
