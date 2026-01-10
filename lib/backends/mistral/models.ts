@@ -2,6 +2,9 @@ import { MODEL_CACHE_TTL_MS } from "../../config.js";
 import { getVibeConfig } from "../../vibeConfig.js";
 
 // High-level: allow Vibe CLI config to seed the active/default model list for the UI.
+// NOTE: vibeConfig is read at module load time and cached for the application lifetime.
+// This is acceptable since the project runs in ephemeral containers with short lifespans.
+// Config changes require a container restart to take effect.
 const vibeConfig = getVibeConfig();
 
 const DEFAULT_MISTRAL_MODEL =

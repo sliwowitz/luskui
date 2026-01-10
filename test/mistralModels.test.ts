@@ -52,6 +52,10 @@ function ensureDir(filePath: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
 }
 
+// NOTE: Dynamic import with random query parameter is used to work around module-level
+// caching of vibeConfig. Each test needs a fresh module instance to ensure the config
+// is re-read based on the test's file system state. This is necessary because the
+// implementation reads vibeConfig at module load time for performance in production.
 async function loadMistralModelsModule() {
   const href = `${mistralModuleHref}?t=${randomUUID()}`;
   return import(href);
