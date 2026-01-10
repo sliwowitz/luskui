@@ -120,6 +120,14 @@ function extractClaudeApiKey(value: unknown, keys: string[]): string | null {
       return candidate.trim();
     }
   }
+  return null;
+}
+
+function extractClaudeOauthToken(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const direct = extractClaudeApiKey(record, ["accessToken", "access_token"]);
+  if (direct) return direct;
   if ("claudeAiOauth" in record && typeof record.claudeAiOauth === "object") {
     return extractClaudeApiKey(record.claudeAiOauth, ["accessToken", "access_token"]);
   }
@@ -136,9 +144,15 @@ function loadClaudeCredentials(filePath: string): void {
       "CLAUDE_API_KEY",
       "claude_api_key"
     ]);
-    if (!key) return;
-    setIfMissing("ANTHROPIC_API_KEY", key);
-    setIfMissing("CLAUDE_API_KEY", key);
+    if (key) {
+      setIfMissing("ANTHROPIC_API_KEY", key);
+      setIfMissing("CLAUDE_API_KEY", key);
+    }
+    const oauthToken = extractClaudeOauthToken(parsed);
+    if (oauthToken) {
+      setIfMissing("CODEXUI_CLAUDE_OAUTH_ACCESS_TOKEN", oauthToken);
+      setIfMissing("CLAUDE_OAUTH_ACCESS_TOKEN", oauthToken);
+    }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
     logLoadError(`Failed to read Claude credentials at ${filePath}`, error);

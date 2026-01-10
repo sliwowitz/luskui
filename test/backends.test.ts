@@ -55,6 +55,8 @@ test("Claude backend rejects runs without an API key", async () => {
   delete process.env.CODEXUI_CLAUDE_API_KEY;
   delete process.env.ANTHROPIC_API_KEY;
   delete process.env.CLAUDE_API_KEY;
+  delete process.env.CODEXUI_CLAUDE_OAUTH_ACCESS_TOKEN;
+  delete process.env.CLAUDE_OAUTH_ACCESS_TOKEN;
   const { createClaudeBackend } = await import("../lib/backends/claude/index.js");
   const backend = createClaudeBackend({
     workingDirectory: "/tmp",
@@ -63,7 +65,7 @@ test("Claude backend rejects runs without an API key", async () => {
     networkAccessEnabled: true,
     approvalPolicy: "never"
   });
-  await assert.rejects(async () => backend.streamRun("hello"), /Missing Claude API key/);
+  await assert.rejects(async () => backend.streamRun("hello"), /Missing Claude credentials/);
 });
 
 test("Claude backend rejects runs when network access is disabled", async () => {

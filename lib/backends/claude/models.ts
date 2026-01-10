@@ -1,4 +1,5 @@
 import { MODEL_CACHE_TTL_MS } from "../../config.js";
+import { resolveClaudeApiKey } from "./auth.js";
 
 const DEFAULT_CLAUDE_MODEL =
   process.env.CODEXUI_CLAUDE_MODEL || process.env.CODEXUI_MODEL || "claude-3-5-sonnet-20240620";
@@ -15,18 +16,15 @@ interface ModelResponse {
   data?: ModelEntry[];
 }
 
-function getClaudeApiKey(): string | null {
-  return (
-    process.env.CODEXUI_CLAUDE_API_KEY ||
-    process.env.ANTHROPIC_API_KEY ||
-    process.env.CLAUDE_API_KEY ||
-    null
-  );
-}
-
 async function fetchModelsFromApi(): Promise<string[] | null> {
   if (typeof fetch !== "function") return null;
-  const apiKey = getClaudeApiKey();
+  let apiKey: string | null = null;
+  try {
+    apiKey = await resolveClaudeApiKey();
+  } catch (error) {
+    console.warn("Failed to fetch Claude models", error instanceof Error ? error.message : error);
+    return null;
+  }
   if (!apiKey) return null;
   const controller = new AbortController();
   const timeoutMs = Number(process.env.CODEXUI_MODEL_FETCH_TIMEOUT_MS || 5000);

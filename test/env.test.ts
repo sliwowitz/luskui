@@ -18,6 +18,8 @@ const trackedEnvKeys = [
   "MISTRAL_API_KEY",
   "ANTHROPIC_API_KEY",
   "CLAUDE_API_KEY",
+  "CLAUDE_OAUTH_ACCESS_TOKEN",
+  "CODEXUI_CLAUDE_OAUTH_ACCESS_TOKEN",
   "EXTRA_ENV",
   "EMPTY_ENV"
 ] as const;
@@ -119,8 +121,10 @@ test("hydrateEnv reads Claude access tokens from credentials JSON", async () => 
   const { hydrateEnv } = await loadEnvModule();
   hydrateEnv();
 
-  assert.equal(process.env.ANTHROPIC_API_KEY, "oauth-token");
-  assert.equal(process.env.CLAUDE_API_KEY, "oauth-token");
+  assert.equal(process.env.CODEXUI_CLAUDE_OAUTH_ACCESS_TOKEN, "oauth-token");
+  assert.equal(process.env.CLAUDE_OAUTH_ACCESS_TOKEN, "oauth-token");
+  assert.equal(process.env.ANTHROPIC_API_KEY, undefined);
+  assert.equal(process.env.CLAUDE_API_KEY, undefined);
 });
 
 test("hydrateEnv is idempotent", async () => {
