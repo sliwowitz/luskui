@@ -96,6 +96,9 @@ export function hydrateEnv(): void {
   didHydrate = true;
   const home = os.homedir?.() ?? process.env.HOME ?? "";
   if (!home) return;
-  loadEnvFile(path.join(home, ".vibe", ".env"));
+  // Default per-user configuration directory for this tool. Can be overridden
+  // by setting VIBE_CONFIG_DIR to a custom path (absolute or relative).
+  const vibeConfigDir = process.env.VIBE_CONFIG_DIR || path.join(home, ".vibe");
+  loadEnvFile(path.join(vibeConfigDir, ".env"));
   loadClaudeCredentials(path.join(home, ".claude", ".credentials.json"));
 }
