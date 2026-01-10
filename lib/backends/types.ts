@@ -18,7 +18,7 @@ export type BackendConfig = {
   skipGitRepoCheck: boolean;
   sandboxMode: "danger-full-access" | "sandbox";
   networkAccessEnabled: boolean;
-  approvalPolicy: "never" | "auto";
+  approvalPolicy: "never" | "on-request" | "on-failure" | "untrusted";
 };
 
 export type ModelSelectionPayload = { model?: unknown; effort?: unknown };
