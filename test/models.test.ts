@@ -16,7 +16,6 @@ type EnvKey = (typeof trackedEnvKeys)[number];
 const originalEnv: Record<EnvKey, string | undefined> = Object.fromEntries(
   trackedEnvKeys.map((key) => [key, process.env[key]])
 ) as Record<EnvKey, string | undefined>;
-
 test.afterEach(() => {
   for (const key of trackedEnvKeys) {
     if (originalEnv[key] === undefined) {

@@ -1,11 +1,15 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import {
+  CODEX_AUTH_PATH,
   DEFAULT_MODEL,
   DEFAULT_EFFORT,
   EFFORT_OPTIONS,
   MODEL_CACHE_TTL_MS,
   type ReasoningEffort
 } from "../../config.js";
-import { getAccessToken } from "../../auth.js";
 
 let activeModel: string | null = DEFAULT_MODEL;
 let activeEffort: ReasoningEffort | null = DEFAULT_EFFORT;
@@ -20,15 +24,107 @@ interface ModelResponse {
   data?: ModelEntry[];
 }
 
+type CodexModelsResponse = {
+  models?: Array<{ slug?: string; model?: string; id?: string }>;
+};
+
+const CHATGPT_MODELS_ENDPOINT = "https://chatgpt.com/backend-api/codex/models";
+const OPENAI_MODELS_ENDPOINT = "https://api.openai.com/v1/models";
+type CodexAuth = { token: string | null; accountId: string | null };
+
+function getCodexAuthFromFile(): CodexAuth {
+  try {
+    const raw = fs.readFileSync(CODEX_AUTH_PATH, "utf8");
+    const parsed = JSON.parse(raw);
+    const token =
+      typeof parsed?.tokens?.access_token === "string" ? parsed.tokens.access_token : null;
+    const accountId =
+      typeof parsed?.account_id === "string"
+        ? parsed.account_id
+        : typeof parsed?.tokens?.account_id === "string"
+          ? parsed.tokens.account_id
+          : null;
+    return { token, accountId };
+  } catch {
+    return { token: null, accountId: null };
+  }
+}
+
+function getClientVersion(): string {
+  try {
+    const currentDir = path.dirname(fileURLToPath(import.meta.url));
+    const packagePath = path.resolve(currentDir, "../../../package.json");
+    const contents = fs.readFileSync(packagePath, "utf8");
+    const parsed = JSON.parse(contents);
+    if (typeof parsed?.version === "string" && parsed.version.trim()) {
+      return parsed.version.trim();
+    }
+  } catch {
+    // ignore
+  }
+  return "0.0.0";
+}
+
+async function fetchModelsFromChatgpt(): Promise<string[] | null> {
+  if (typeof fetch !== "function") return null;
+  const { token, accountId } = getCodexAuthFromFile();
+  if (!token) return null;
+  const controller = new AbortController();
+  const timeoutMs = Number(process.env.CODEXUI_MODEL_FETCH_TIMEOUT_MS || 5000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const clientVersion = getClientVersion();
+  try {
+    const url = new URL(CHATGPT_MODELS_ENDPOINT);
+    if (clientVersion) {
+      url.searchParams.set("client_version", clientVersion);
+    }
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${token}`
+    };
+    if (accountId) {
+      headers["ChatGPT-Account-ID"] = accountId;
+    }
+    const resp = await fetch(url.toString(), {
+      method: "GET",
+      headers,
+      signal: controller.signal
+    });
+    if (!resp.ok) {
+      throw new Error(`Model request failed (${resp.status})`);
+    }
+    const payload = (await resp.json()) as CodexModelsResponse;
+    if (!payload || !Array.isArray(payload.models)) return null;
+    const seen = new Set<string>();
+    for (const entry of payload.models) {
+      const id =
+        typeof entry?.slug === "string"
+          ? entry.slug
+          : typeof entry?.model === "string"
+            ? entry.model
+            : typeof entry?.id === "string"
+              ? entry.id
+              : null;
+      if (!id) continue;
+      seen.add(id);
+    }
+    return Array.from(seen).sort((a, b) => a.localeCompare(b));
+  } catch (error) {
+    console.warn("Failed to fetch ChatGPT models", error instanceof Error ? error.message : error);
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchModelsFromApi(): Promise<string[] | null> {
   if (typeof fetch !== "function") return null;
-  const token = getAccessToken();
+  const token = process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY || null;
   if (!token) return null;
   const controller = new AbortController();
   const timeoutMs = Number(process.env.CODEXUI_MODEL_FETCH_TIMEOUT_MS || 5000);
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const resp = await fetch("https://api.openai.com/v1/models", {
+    const resp = await fetch(OPENAI_MODELS_ENDPOINT, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${token}`
@@ -64,7 +160,7 @@ export async function getAvailableModels(): Promise<string[]> {
   }
   if (!inflightModelFetch) {
     inflightModelFetch = (async () => {
-      const remote = await fetchModelsFromApi();
+      const remote = (await fetchModelsFromChatgpt()) || (await fetchModelsFromApi());
       const models: string[] = remote && remote.length ? remote : [];
       cachedModels = { list: models, fetchedAt: Date.now() };
       return models;
