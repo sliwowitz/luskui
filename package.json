@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node dist/server.js",
     "test": "node --test --loader ts-node/esm",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"**/*.{ts,js}\" --max-warnings=0",
