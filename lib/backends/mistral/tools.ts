@@ -27,14 +27,12 @@ type ToolSpec = {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
-  requiredPermission?: string;
 };
 
 const TOOL_SPECS: ToolSpec[] = [
   {
     name: "filesystem.read",
     description: "Read a text file from the repository workspace.",
-    requiredPermission: "read",
     parameters: {
       type: "object",
       properties: {
@@ -47,7 +45,6 @@ const TOOL_SPECS: ToolSpec[] = [
   {
     name: "filesystem.write",
     description: "Write a text file to the repository workspace.",
-    requiredPermission: "write",
     parameters: {
       type: "object",
       properties: {
@@ -61,7 +58,6 @@ const TOOL_SPECS: ToolSpec[] = [
   {
     name: "filesystem.list",
     description: "List entries inside a repository directory.",
-    requiredPermission: "read",
     parameters: {
       type: "object",
       properties: {
@@ -74,7 +70,6 @@ const TOOL_SPECS: ToolSpec[] = [
   {
     name: "shell",
     description: "Run a shell command inside the repository workspace.",
-    requiredPermission: "exec",
     parameters: {
       type: "object",
       properties: {
@@ -85,11 +80,6 @@ const TOOL_SPECS: ToolSpec[] = [
     }
   }
 ];
-
-function isToolEnabled(toolName: string): boolean {
-  void toolName;
-  return true;
-}
 
 function formatToolResult(payload: unknown): string {
   try {
@@ -109,7 +99,7 @@ function parseToolArgs(raw: string): Record<string, unknown> | null {
 }
 
 function buildToolDefinitions(): ToolDefinition[] {
-  return TOOL_SPECS.filter((spec) => isToolEnabled(spec.name)).map((spec) => ({
+  return TOOL_SPECS.map((spec) => ({
     type: "function",
     function: {
       name: spec.name,
@@ -122,7 +112,7 @@ function buildToolDefinitions(): ToolDefinition[] {
 async function executeShell(command: string, config: BackendConfig): Promise<ToolExecutionResult> {
   const tool: BackendTool = { name: "shell", args: [command] };
   return await new Promise<ToolExecutionResult>((resolve) => {
-    const child = spawn("bash", ["-lc", command], { cwd: config.workingDirectory });
+    const child = spawn("bash", ["-c", command], { cwd: config.workingDirectory });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (data) => {
@@ -233,17 +223,6 @@ export async function executeMistralTool(
   rawArgs: string,
   config: BackendConfig
 ): Promise<ToolExecutionResult> {
-  if (!isToolEnabled(toolName)) {
-    const tool: BackendTool = { name: toolName, args: [] };
-    return {
-      tool,
-      stdout: "",
-      stderr: "Tool is disabled by configuration",
-      exitCode: 1,
-      result: formatToolResult({ ok: false, error: "Tool is disabled by configuration" })
-    };
-  }
-
   const parsed = parseToolArgs(rawArgs);
   if (!parsed && toolName !== "shell") {
     const tool: BackendTool = { name: toolName, args: [rawArgs] };
