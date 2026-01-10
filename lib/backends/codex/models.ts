@@ -81,7 +81,7 @@ async function fetchModelsFromChatgpt(): Promise<string[] | null> {
   const clientVersion = getClientVersion();
   try {
     const url = new URL(CHATGPT_MODELS_ENDPOINT);
-    if (clientVersion) {
+    if (clientVersion !== "0.0.0") {
       url.searchParams.set("client_version", clientVersion);
     }
     const headers: Record<string, string> = {
