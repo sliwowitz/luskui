@@ -26,5 +26,10 @@ const run = (command, args) =>
 
 await rm(distDir, { recursive: true, force: true });
 await mkdir(distDir, { recursive: true });
-await run(path.join(repoRoot, "node_modules", ".bin", "tsc"), ["--outDir", "dist"]);
+await run(path.join(repoRoot, "node_modules", ".bin", "tsc"), [
+  "--project",
+  path.join(repoRoot, "tsconfig.build.json"),
+  "--outDir",
+  distDir,
+]);
 await cp(staticDir, path.join(distDir, "static"), { recursive: true });
