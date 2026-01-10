@@ -29,7 +29,7 @@ const DEFAULT_EFFORT_FROM_CONFIG = readConfigValue(/^\s*model_reasoning_effort\s
 
 export const DEFAULT_MODEL: string | null =
   process.env.CODEXUI_MODEL || DEFAULT_MODEL_FROM_CONFIG || null;
-export const EFFORT_OPTIONS = ["minimal", "low", "medium", "high"] as const;
+export const EFFORT_OPTIONS = ["minimal", "low", "medium", "high", "xhigh"] as const;
 export type ReasoningEffort = (typeof EFFORT_OPTIONS)[number];
 
 function normalizeEffort(value: string | null | undefined): ReasoningEffort | null {
@@ -43,16 +43,6 @@ function normalizeEffort(value: string | null | undefined): ReasoningEffort | nu
 export const DEFAULT_EFFORT: ReasoningEffort | null = normalizeEffort(
   process.env.CODEXUI_EFFORT || DEFAULT_EFFORT_FROM_CONFIG
 );
-export const FALLBACK_MODELS: string[] = [
-  "gpt-5-codex",
-  "o4",
-  "o4-mini",
-  "o3",
-  "o1",
-  "gpt-4.1",
-  "gpt-4o",
-  "gpt-4o-mini"
-];
 export const MODEL_CACHE_TTL_MS = Number(process.env.CODEXUI_MODEL_CACHE_MS || 5 * 60 * 1000);
 
 export const SKIP_GIT_REPO_CHECK =

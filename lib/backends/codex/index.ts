@@ -1,5 +1,5 @@
 import { Codex } from "@openai/codex-sdk";
-import type { ApprovalMode, SandboxMode } from "@openai/codex-sdk";
+import type { ApprovalMode, ModelReasoningEffort, SandboxMode } from "@openai/codex-sdk";
 
 import type { Backend, BackendConfig, BackendEvent, BackendTool } from "../types.js";
 import {
@@ -157,7 +157,7 @@ export function createCodexBackend(config: BackendConfig): Backend {
         networkAccessEnabled: config.networkAccessEnabled,
         approvalPolicy,
         model: getActiveModel() || undefined,
-        modelReasoningEffort: getActiveEffort() || undefined
+        modelReasoningEffort: (getActiveEffort() as ModelReasoningEffort | null) || undefined
       });
 
       const { events } = await thread.runStreamed(prompt);

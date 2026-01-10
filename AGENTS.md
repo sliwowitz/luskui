@@ -94,7 +94,7 @@ ENV REPO_ROOT="/workspace/ultimate-container" \
     simple file tree + inline editor.
 * **Model management**
   * `/api/model` (GET/POST) surfaces the current model/effort along with defaults pulled from `~/.codex/config.toml` (or
-    env overrides). `models.js` keeps a cached list fetched from the OpenAI API and merges it with `FALLBACK_MODELS`.
+    env overrides). `models.js` keeps a cached list fetched from the OpenAI API.
 * **Logging**
   * Every run/action is logged via `lib/logging.js` to stdout and (when available) `/opt/codexui/codexui.log`.
 
