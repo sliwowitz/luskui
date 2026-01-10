@@ -1,5 +1,6 @@
 import type { Backend, BackendConfig, BackendEvent, BackendTool } from "../types.js";
 import { getActiveModel, getModelSettings, updateModelSelection } from "./models.js";
+import { resolveClaudeApiKey } from "./auth.js";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 
@@ -23,15 +24,6 @@ type ClaudeStreamPayload = {
   delta?: { type?: string; text?: string; partial_json?: string };
   error?: { message?: string } | string;
 };
-
-function getClaudeApiKey(): string | null {
-  return (
-    process.env.CODEXUI_CLAUDE_API_KEY ||
-    process.env.ANTHROPIC_API_KEY ||
-    process.env.CLAUDE_API_KEY ||
-    null
-  );
-}
 
 function formatToolArgs(input: unknown): string[] {
   if (input === null || typeof input === "undefined") return [];
@@ -114,10 +106,18 @@ export function createClaudeBackend(config: BackendConfig): Backend {
       if (!config.networkAccessEnabled) {
         throw new Error("Claude backend requires network access");
       }
-      const apiKey = getClaudeApiKey();
+      let apiKey: string | null = null;
+      try {
+        apiKey = await resolveClaudeApiKey();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `${message}\nPlease re-authenticate with the Claude CLI (run \`claude\` and follow the login flow).`
+        );
+      }
       if (!apiKey) {
         throw new Error(
-          "Missing Claude API key (set CODEXUI_CLAUDE_API_KEY, ANTHROPIC_API_KEY, or CLAUDE_API_KEY)"
+          "Missing Claude credentials (set CODEXUI_CLAUDE_API_KEY, ANTHROPIC_API_KEY, CLAUDE_API_KEY, or authenticate with the Claude CLI)."
         );
       }
 
