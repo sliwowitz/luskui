@@ -1,4 +1,11 @@
+/**
+ * Claude backend implementation.
+ *
+ * Makes direct HTTP calls to the Anthropic API with SSE streaming.
+ * Uses OAuth token minting for authentication when Claude CLI credentials are available.
+ */
 import type { Backend, BackendConfig, BackendEvent, BackendTool } from "../types.js";
+import { extractDiffs, formatToolArgsForDisplay, getErrorMessage } from "../utils.js";
 import { getActiveModel, getModelSettings, updateModelSelection } from "./models.js";
 import { resolveClaudeApiKey } from "./auth.js";
 
@@ -24,29 +31,6 @@ type ClaudeStreamPayload = {
   delta?: { type?: string; text?: string; partial_json?: string };
   error?: { message?: string } | string;
 };
-
-function formatToolArgs(input: unknown): string[] {
-  if (input === null || typeof input === "undefined") return [];
-  if (typeof input === "string") return [input];
-  if (typeof input === "number" || typeof input === "boolean") return [String(input)];
-  if (Array.isArray(input)) return input.map((entry) => String(entry));
-  if (typeof input === "object") {
-    return Object.entries(input as Record<string, unknown>).map(
-      ([key, value]) => `${key}=${JSON.stringify(value)}`
-    );
-  }
-  return [String(input)];
-}
-
-function extractDiffs(text: string): string[] {
-  const matches: string[] = [];
-  const regex = /```(?:diff|patch)\n([\s\S]*?)```/g;
-  let match: RegExpExecArray | null = null;
-  while ((match = regex.exec(text))) {
-    if (match[1]) matches.push(match[1].trimEnd());
-  }
-  return matches;
-}
 
 async function* parseSseStream(stream: ReadableStream<Uint8Array>): AsyncIterable<SseEvent> {
   const reader = stream.getReader();
@@ -110,9 +94,8 @@ export function createClaudeBackend(config: BackendConfig): Backend {
       try {
         apiKey = await resolveClaudeApiKey();
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
         throw new Error(
-          `${message}\nPlease re-authenticate with the Claude CLI (run \`claude\` and follow the login flow).`
+          `${getErrorMessage(error)}\nPlease re-authenticate with the Claude CLI (run \`claude\` and follow the login flow).`
         );
       }
       if (!apiKey) {
@@ -171,7 +154,7 @@ export function createClaudeBackend(config: BackendConfig): Backend {
               if (block?.type === "tool_use") {
                 const tool: BackendTool = {
                   name: block.name || "tool",
-                  args: formatToolArgs(block.input)
+                  args: formatToolArgsForDisplay(block.input)
                 };
                 toolState.set(index, tool);
                 yield { type: "tool.start", tool };
