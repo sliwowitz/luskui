@@ -29,12 +29,15 @@ const DEFAULT_EFFORT_FROM_CONFIG = readConfigValue(/^\s*model_reasoning_effort\s
 
 export const DEFAULT_MODEL: string | null =
   process.env.CODEXUI_MODEL || DEFAULT_MODEL_FROM_CONFIG || null;
-export type ReasoningEffort = string;
+export const EFFORT_OPTIONS = ["minimal", "low", "medium", "high", "xhigh"] as const;
+export type ReasoningEffort = (typeof EFFORT_OPTIONS)[number];
 
 function normalizeEffort(value: string | null | undefined): ReasoningEffort | null {
   if (!value) return null;
   const normalized = value.trim().toLowerCase();
-  return normalized || null;
+  return (EFFORT_OPTIONS as readonly string[]).includes(normalized)
+    ? (normalized as ReasoningEffort)
+    : null;
 }
 
 export const DEFAULT_EFFORT: ReasoningEffort | null = normalizeEffort(

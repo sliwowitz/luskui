@@ -1,6 +1,7 @@
 import {
   DEFAULT_MODEL,
   DEFAULT_EFFORT,
+  EFFORT_OPTIONS,
   MODEL_CACHE_TTL_MS,
   type ReasoningEffort
 } from "../../config.js";
@@ -104,7 +105,9 @@ export function updateModelSelection(selection: ModelSelection = {}): void {
     activeEffort = null;
   } else if (typeof effort === "string") {
     const normalized = effort.trim().toLowerCase();
-    activeEffort = (normalized || null) as ReasoningEffort | null;
+    if ((EFFORT_OPTIONS as readonly string[]).includes(normalized)) {
+      activeEffort = normalized as ReasoningEffort;
+    }
   }
 }
 
@@ -123,6 +126,6 @@ export async function getModelSettings(): Promise<{
     availableModels: models,
     effort: activeEffort,
     defaultEffort: DEFAULT_EFFORT,
-    effortOptions: []
+    effortOptions: EFFORT_OPTIONS
   };
 }

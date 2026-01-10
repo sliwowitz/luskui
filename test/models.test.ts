@@ -95,7 +95,7 @@ test("updateModelSelection normalizes values and records manual effort overrides
   updateModelSelection({ model: "", effort: "ultra" });
   settings = await getModelSettings();
   assert.equal(settings.model, null, "empty strings clear the manual model override");
-  assert.equal(settings.effort, "ultra", "effort values should be accepted as provided");
+  assert.equal(settings.effort, "high", "invalid effort leaves the previous value untouched");
 
   updateModelSelection({ model: null, effort: "" });
   settings = await getModelSettings();

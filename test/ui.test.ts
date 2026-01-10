@@ -181,7 +181,7 @@ async function bootstrapUi({ storedTheme = null, prefersDark = false }: Bootstra
     effort: null,
     defaultEffort: "medium",
     availableModels: ["gpt-4o-mini"],
-    effortOptions: ["minimal", "low", "medium", "high"]
+    effortOptions: ["minimal", "low", "medium", "high", "xhigh"]
   };
 
   window.fetch = (async (url: string, options: RequestInit = {}) => {
