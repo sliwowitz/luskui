@@ -39,7 +39,7 @@ const backend = getBackend({
   skipGitRepoCheck: SKIP_GIT_REPO_CHECK,
   sandboxMode: "danger-full-access",
   networkAccessEnabled: true,
-  approvalPolicy: "auto"
+  approvalPolicy: "never"
 });
 
 app.get("/", (_req: Request, res: Response) => res.redirect("/static/index.html"));
