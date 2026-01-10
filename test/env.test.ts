@@ -66,6 +66,9 @@ test("parseEnv handles comments, export statements, multiline values, and escape
       "MULTI=line one",
       "line two",
       'QUOTED="my\\"secret\\"key"',
+      'NEWLINE="foo\\nbar"',
+      'LITERAL_BACKSLASH="foo\\\\nbar"',
+      'TAB="foo\\tbar"',
       "TRAILING="
     ].join("\n")
   );
@@ -73,6 +76,9 @@ test("parseEnv handles comments, export statements, multiline values, and escape
   assert.equal(parsed.FOO, "bar");
   assert.equal(parsed.MULTI, "line one\nline two");
   assert.equal(parsed.QUOTED, 'my"secret"key');
+  assert.equal(parsed.NEWLINE, "foo\nbar");
+  assert.equal(parsed.LITERAL_BACKSLASH, "foo\\nbar");
+  assert.equal(parsed.TAB, "foo\tbar");
   assert.equal(parsed.TRAILING, "");
 });
 
@@ -151,11 +157,8 @@ test("hydrateEnv logs failures when credential files are malformed", async () =>
   const { hydrateEnv } = await loadEnvModule();
   hydrateEnv();
 
-  assert.equal(warnings.length > 0, true);
-  assert.equal(
-    warnings.some((warning) => warning.includes("Failed to read Claude credentials")),
-    true
-  );
+  assert.ok(warnings.length > 0);
+  assert.ok(warnings.some((warning) => warning.includes("Failed to read Claude credentials")));
   assert.equal(process.env.ANTHROPIC_API_KEY, undefined);
   assert.equal(process.env.CLAUDE_API_KEY, undefined);
 });

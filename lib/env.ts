@@ -100,13 +100,13 @@ function logLoadError(context: string, error: unknown): void {
 
 function loadEnvFile(filePath: string): void {
   try {
-    if (!fs.existsSync(filePath)) return;
     const contents = fs.readFileSync(filePath, "utf8");
     const parsed = parseEnv(contents);
     for (const [key, value] of Object.entries(parsed)) {
       setIfMissing(key, value);
     }
   } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
     logLoadError(`Failed to read env file at ${filePath}`, error);
   }
 }
@@ -128,7 +128,6 @@ function extractClaudeApiKey(value: unknown, keys: string[]): string | null {
 
 function loadClaudeCredentials(filePath: string): void {
   try {
-    if (!fs.existsSync(filePath)) return;
     const raw = fs.readFileSync(filePath, "utf8");
     const parsed = JSON.parse(raw);
     const key = extractClaudeApiKey(parsed, [
@@ -141,6 +140,7 @@ function loadClaudeCredentials(filePath: string): void {
     setIfMissing("ANTHROPIC_API_KEY", key);
     setIfMissing("CLAUDE_API_KEY", key);
   } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
     logLoadError(`Failed to read Claude credentials at ${filePath}`, error);
   }
 }
