@@ -3,13 +3,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  CODEX_AUTH_PATH,
   DEFAULT_MODEL,
   DEFAULT_EFFORT,
   EFFORT_OPTIONS,
   MODEL_CACHE_TTL_MS,
   type ReasoningEffort
 } from "../../config.js";
+import { getCodexAuth, getAccessToken } from "../../auth.js";
 
 let activeModel: string | null = DEFAULT_MODEL;
 let activeEffort: ReasoningEffort | null = DEFAULT_EFFORT;
@@ -30,25 +30,6 @@ type CodexModelsResponse = {
 
 const CHATGPT_MODELS_ENDPOINT = "https://chatgpt.com/backend-api/codex/models";
 const OPENAI_MODELS_ENDPOINT = "https://api.openai.com/v1/models";
-type CodexAuth = { token: string | null; accountId: string | null };
-
-function getCodexAuthFromFile(): CodexAuth {
-  try {
-    const raw = fs.readFileSync(CODEX_AUTH_PATH, "utf8");
-    const parsed = JSON.parse(raw);
-    const token =
-      typeof parsed?.tokens?.access_token === "string" ? parsed.tokens.access_token : null;
-    const accountId =
-      typeof parsed?.account_id === "string"
-        ? parsed.account_id
-        : typeof parsed?.tokens?.account_id === "string"
-          ? parsed.tokens.account_id
-          : null;
-    return { token, accountId };
-  } catch {
-    return { token: null, accountId: null };
-  }
-}
 
 function getClientVersion(): string {
   try {
@@ -73,7 +54,7 @@ function getClientVersion(): string {
 
 async function fetchModelsFromChatgpt(): Promise<string[] | null> {
   if (typeof fetch !== "function") return null;
-  const { token, accountId } = getCodexAuthFromFile();
+  const { token, accountId } = getCodexAuth();
   if (!token) return null;
   const controller = new AbortController();
   const timeoutMs = Number(process.env.CODEXUI_MODEL_FETCH_TIMEOUT_MS || 5000);
@@ -124,7 +105,7 @@ async function fetchModelsFromChatgpt(): Promise<string[] | null> {
 
 async function fetchModelsFromApi(): Promise<string[] | null> {
   if (typeof fetch !== "function") return null;
-  const token = process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY || null;
+  const token = getAccessToken();
   if (!token) return null;
   const controller = new AbortController();
   const timeoutMs = Number(process.env.CODEXUI_MODEL_FETCH_TIMEOUT_MS || 5000);
