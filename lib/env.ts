@@ -19,16 +19,51 @@ function stripQuotes(value: string): string {
 
 function parseEnv(contents: string): EnvMap {
   const env: EnvMap = {};
+  let currentKey: string | null = null;
+  let currentValue: string | null = null;
+
   for (const line of contents.split(/\r?\n/)) {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    // Blank or comment line: finalize any pending multiline value and skip
+    if (!trimmed || trimmed.startsWith("#")) {
+      if (currentKey !== null) {
+        env[currentKey] = stripQuotes(currentValue ?? "");
+        currentKey = null;
+        currentValue = null;
+      }
+      continue;
+    }
+
     const withoutExport = trimmed.startsWith("export ") ? trimmed.slice(7).trim() : trimmed;
     const equalsIndex = withoutExport.indexOf("=");
-    if (equalsIndex <= 0) continue;
+
+    // Line without '=', treat as continuation of previous value if any
+    if (equalsIndex <= 0) {
+      if (currentKey !== null) {
+        currentValue = (currentValue ?? "") + "\n" + line;
+      }
+      continue;
+    }
+
+    // New assignment: flush any previous pending key/value
+    if (currentKey !== null) {
+      env[currentKey] = stripQuotes(currentValue ?? "");
+      currentKey = null;
+      currentValue = null;
+    }
+
     const key = withoutExport.slice(0, equalsIndex).trim();
     const rawValue = withoutExport.slice(equalsIndex + 1);
     if (!key) continue;
-    env[key] = stripQuotes(rawValue);
+
+    currentKey = key;
+    currentValue = rawValue;
+  }
+
+  // Flush any trailing multiline value at EOF
+  if (currentKey !== null) {
+    env[currentKey] = stripQuotes(currentValue ?? "");
   }
   return env;
 }
