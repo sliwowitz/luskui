@@ -38,9 +38,14 @@ function stripTomlComments(line: string): string {
   let inDouble = false;
   for (let i = 0; i < line.length; i += 1) {
     const ch = line[i];
-    if (ch === "'" && !inDouble) {
+    const prev = i > 0 ? line[i - 1] : "";
+
+    // Track escape sequences - if previous character is backslash, skip quote toggle
+    const isEscaped = prev === "\\" && i > 0;
+
+    if (ch === "'" && !inDouble && !isEscaped) {
       inSingle = !inSingle;
-    } else if (ch === '"' && !inSingle) {
+    } else if (ch === '"' && !inSingle && !isEscaped) {
       inDouble = !inDouble;
     } else if (ch === "#" && !inSingle && !inDouble) {
       return line.slice(0, i);
@@ -77,9 +82,14 @@ function splitTomlArray(raw: string): string[] {
   let inDouble = false;
   for (let i = 0; i < raw.length; i += 1) {
     const ch = raw[i];
-    if (ch === "'" && !inDouble) {
+    const prev = i > 0 ? raw[i - 1] : "";
+
+    // Track escape sequences - if previous character is backslash, skip quote toggle
+    const isEscaped = prev === "\\" && i > 0;
+
+    if (ch === "'" && !inDouble && !isEscaped) {
       inSingle = !inSingle;
-    } else if (ch === '"' && !inSingle) {
+    } else if (ch === '"' && !inSingle && !isEscaped) {
       inDouble = !inDouble;
     }
 
