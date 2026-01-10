@@ -1,7 +1,17 @@
 import { MODEL_CACHE_TTL_MS } from "../../config.js";
+import { getVibeConfig } from "../../vibeConfig.js";
+
+// High-level: allow Vibe CLI config to seed the active/default model list for the UI.
+// NOTE: vibeConfig is read at module load time and cached for the application lifetime.
+// This is acceptable since the project runs in ephemeral containers with short lifespans.
+// Config changes require a container restart to take effect.
+const vibeConfig = getVibeConfig();
 
 const DEFAULT_MISTRAL_MODEL =
-  process.env.CODEXUI_MISTRAL_MODEL || process.env.CODEXUI_MODEL || "mistral-large-latest";
+  process.env.CODEXUI_MISTRAL_MODEL ||
+  process.env.CODEXUI_MODEL ||
+  vibeConfig?.active_model ||
+  "mistral-large-latest";
 
 let activeModel: string | null = DEFAULT_MISTRAL_MODEL;
 let cachedModels: { list: string[]; fetchedAt: number } | null = null;
@@ -17,6 +27,19 @@ interface ModelResponse {
 
 function getMistralApiKey(): string | null {
   return process.env.CODEXUI_MISTRAL_API_KEY || process.env.MISTRAL_API_KEY || null;
+}
+
+function mergeModels(apiModels: string[], configModels: string[] | undefined): string[] {
+  const seen = new Set<string>();
+  for (const model of apiModels) {
+    if (model) seen.add(model);
+  }
+  if (configModels) {
+    for (const model of configModels) {
+      if (model) seen.add(model);
+    }
+  }
+  return Array.from(seen).sort((a, b) => a.localeCompare(b));
 }
 
 async function fetchModelsFromApi(): Promise<string[] | null> {
@@ -62,13 +85,14 @@ async function getAvailableModels(): Promise<string[]> {
   if (!inflightModelFetch) {
     inflightModelFetch = (async () => {
       const remote = await fetchModelsFromApi();
-      const models: string[] = remote && remote.length ? remote : [];
-      cachedModels = { list: models, fetchedAt: Date.now() };
-      return models;
+      const merged = mergeModels(remote && remote.length ? remote : [], vibeConfig?.models);
+      cachedModels = { list: merged, fetchedAt: Date.now() };
+      return merged;
     })()
       .catch(() => {
-        cachedModels = { list: [], fetchedAt: Date.now() };
-        return [];
+        const merged = mergeModels([], vibeConfig?.models);
+        cachedModels = { list: merged, fetchedAt: Date.now() };
+        return merged;
       })
       .finally(() => {
         inflightModelFetch = null;
