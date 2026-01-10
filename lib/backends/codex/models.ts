@@ -90,7 +90,7 @@ async function fetchModelsFromChatgpt(): Promise<string[] | null> {
       signal: controller.signal
     });
     if (!resp.ok) {
-      throw new Error(`Model request failed (${resp.status})`);
+      throw new Error(`ChatGPT model request failed (${resp.status}) for ${url.toString()}`);
     }
     const payload = (await resp.json()) as CodexModelsResponse;
     if (!payload || !Array.isArray(payload.models)) return null;
