@@ -59,7 +59,13 @@ function parseTomlString(value: string): string {
     }
   }
   if (trimmed.startsWith("'")) {
-    return trimmed.slice(1, -1);
+    // For single-quoted TOML strings, ensure the string is properly closed
+    // before stripping the surrounding quotes. If it's malformed (e.g. missing
+    // a closing quote), return the trimmed value unchanged to avoid corrupting it.
+    if (trimmed.length >= 2 && trimmed.endsWith("'")) {
+      return trimmed.slice(1, -1);
+    }
+    return trimmed;
   }
   return trimmed;
 }
