@@ -51,7 +51,7 @@ async function mintApiKey(oauthToken: string): Promise<string | null> {
         ? payload.api_key.trim()
         : null;
   if (!rawKey) {
-    throw new Error("Claude OAuth response missing api key");
+    throw new Error("Claude OAuth response missing API key");
   }
   return rawKey;
 }
