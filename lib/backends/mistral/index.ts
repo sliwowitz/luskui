@@ -128,7 +128,6 @@ export function createMistralBackend(config: BackendConfig): Backend {
           }
         ],
         model,
-        handoffExecution: "client",
         tools: tools.length ? tools : undefined,
         completionArgs: {
           responseFormat
@@ -277,7 +276,6 @@ export function createMistralBackend(config: BackendConfig): Backend {
                             result: result.result
                           }
                         ],
-                        handoffExecution: "client",
                         completionArgs: {
                           responseFormat
                         }
