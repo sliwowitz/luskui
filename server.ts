@@ -59,8 +59,8 @@ const indexHtmlPath = path.join(staticDir, "index.html");
 const indexHtmlTemplate = fs.readFileSync(indexHtmlPath, "utf-8");
 
 // Generate dynamic page title from PROJECT_ID environment variable
-const projectId = process.env.PROJECT_ID || "";
-const pageTitle = projectId ? `Lusk: ${projectId}` : "LuskUI";
+const projectId = process.env.PROJECT_ID || "(unknown project)";
+const pageTitle = `Lusk: ${projectId}`;
 const indexHtml = indexHtmlTemplate.replace(/<title>LuskUI<\/title>/, `<title>${pageTitle}</title>`);
 
 // Serve dynamic index.html
