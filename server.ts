@@ -12,6 +12,7 @@
  */
 import express, { Request, Response } from "express";
 import path from "node:path";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { hydrateEnv } from "./lib/env.js";
@@ -53,8 +54,22 @@ const backend = getBackend({
 // Mount file operations router
 app.use("/api", fileRouter);
 
-// Redirect root to UI
-app.get("/", (_req: Request, res: Response) => res.redirect("/static/index.html"));
+// Read and cache the index.html template
+const indexHtmlPath = path.join(staticDir, "index.html");
+const indexHtmlTemplate = fs.readFileSync(indexHtmlPath, "utf-8");
+
+// Generate dynamic page title from PROJECT_ID environment variable
+const projectId = process.env.PROJECT_ID || "(unknown project)";
+const pageTitle = `Lusk: ${projectId}`;
+const indexHtml = indexHtmlTemplate.replace(
+  /<title>LuskUI<\/title>/,
+  `<title>${pageTitle}</title>`
+);
+
+// Serve dynamic index.html
+app.get("/", (_req: Request, res: Response) => {
+  res.type("html").send(indexHtml);
+});
 
 /**
  * Create a new run with the given prompt.
