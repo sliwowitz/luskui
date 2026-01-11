@@ -1,6 +1,13 @@
+/**
+ * Mistral backend implementation.
+ *
+ * Uses the Mistral beta conversation API for streaming interactions.
+ * Implements client-side tool execution (handoffExecution: "client").
+ */
 import { Mistral } from "@mistralai/mistralai";
 
 import type { Backend, BackendConfig, BackendEvent, BackendTool } from "../types.js";
+import { extractDiffs, formatToolArgs } from "../utils.js";
 import { getActiveModel, getModelSettings, updateModelSelection } from "./models.js";
 import { executeMistralTool, getMistralToolDefinitions } from "./tools.js";
 
@@ -27,41 +34,10 @@ function getMistralApiKey(): string | null {
   return process.env.CODEXUI_MISTRAL_API_KEY || process.env.MISTRAL_API_KEY || null;
 }
 
-function formatToolArgs(raw: unknown): string[] {
-  if (raw === null || raw === undefined) {
-    return [];
-  }
-
-  if (typeof raw === "string") {
-    const trimmed = raw.trim();
-    if (!trimmed) {
-      return [];
-    }
-
-    // If the string looks like JSON, try to parse and format it.
-    try {
-      const parsed = JSON.parse(trimmed);
-      return formatToolArgs(parsed);
-    } catch {
-      return [raw];
-    }
-  }
-
-  if (typeof raw === "number" || typeof raw === "boolean") {
-    return [String(raw)];
-  }
-
-  if (Array.isArray(raw) || typeof raw === "object") {
-    try {
-      return [JSON.stringify(raw, null, 2)];
-    } catch {
-      return [String(raw)];
-    }
-  }
-
-  return [String(raw)];
-}
-
+/**
+ * Handles content chunks from Mistral stream, yielding appropriate events.
+ * Supports text and thinking content types.
+ */
 function* handleContent(content: unknown): Generator<BackendEvent> {
   if (!content) return;
   if (typeof content === "string") {
@@ -86,16 +62,6 @@ function* handleContent(content: unknown): Generator<BackendEvent> {
   if (chunk.text) {
     yield { type: "message", text: chunk.text };
   }
-}
-
-function extractDiffs(text: string): string[] {
-  const matches: string[] = [];
-  const regex = /```(?:diff|patch)\n([\s\S]*?)```/g;
-  let match: RegExpExecArray | null = null;
-  while ((match = regex.exec(text))) {
-    if (match[1]) matches.push(match[1].trimEnd());
-  }
-  return matches;
 }
 
 export function createMistralBackend(config: BackendConfig): Backend {

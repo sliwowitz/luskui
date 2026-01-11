@@ -1,3 +1,14 @@
+/**
+ * Codex CLI authentication helpers.
+ *
+ * Reads authentication credentials from:
+ * 1. Environment variables (OPENAI_API_KEY, CODEX_API_KEY)
+ * 2. Codex CLI auth file (~/.codex/auth.json)
+ *
+ * The auth file is created by the Codex CLI's login flow and contains
+ * OAuth tokens for ChatGPT API access. This enables using the same
+ * authentication as the CLI without separate API key management.
+ */
 import fs from "node:fs";
 
 import { CODEX_AUTH_PATH } from "./config.js";
@@ -8,7 +19,8 @@ export interface CodexAuthData {
 }
 
 /**
- * Read and parse the Codex auth file
+ * Read and parse the Codex CLI auth file.
+ * Returns null if file doesn't exist or isn't valid JSON.
  */
 function readAuthFile(): Record<string, unknown> | null {
   try {

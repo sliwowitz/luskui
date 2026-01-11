@@ -1,21 +1,14 @@
-import { MODEL_CACHE_TTL_MS } from "../../config.js";
+/**
+ * Mistral backend model management.
+ *
+ * Uses the shared model manager with Mistral-specific configuration:
+ * - Does not support reasoning effort levels
+ * - Fetches models from Mistral API using API key
+ * - Merges API models with models defined in Vibe CLI config
+ * - Default model from environment, Vibe config, or falls back to mistral-large-latest
+ */
 import { getVibeConfig } from "../../vibeConfig.js";
-
-// High-level: allow Vibe CLI config to seed the active/default model list for the UI.
-// NOTE: vibeConfig is read at module load time and cached for the application lifetime.
-// This is acceptable since the project runs in ephemeral containers with short lifespans.
-// Config changes require a container restart to take effect.
-const vibeConfig = getVibeConfig();
-
-const DEFAULT_MISTRAL_MODEL =
-  process.env.CODEXUI_MISTRAL_MODEL ||
-  process.env.CODEXUI_MODEL ||
-  vibeConfig?.active_model ||
-  "mistral-large-latest";
-
-let activeModel: string | null = DEFAULT_MISTRAL_MODEL;
-let cachedModels: { list: string[]; fetchedAt: number } | null = null;
-let inflightModelFetch: Promise<string[]> | null = null;
+import { createModelManager, type ModelManager } from "../modelManager.js";
 
 interface ModelEntry {
   id?: string;
@@ -25,36 +18,39 @@ interface ModelResponse {
   data?: ModelEntry[];
 }
 
+/**
+ * Vibe config is read once at module load time and cached for the application lifetime.
+ * This is acceptable since the project runs in ephemeral containers with short lifespans.
+ * Config changes require a container restart to take effect.
+ */
+const vibeConfig = getVibeConfig();
+
+const DEFAULT_MISTRAL_MODEL =
+  process.env.CODEXUI_MISTRAL_MODEL ||
+  process.env.CODEXUI_MODEL ||
+  vibeConfig?.active_model ||
+  "mistral-large-latest";
+
 function getMistralApiKey(): string | null {
   return process.env.CODEXUI_MISTRAL_API_KEY || process.env.MISTRAL_API_KEY || null;
 }
 
-function mergeModels(apiModels: string[], configModels: string[] | undefined): string[] {
-  const seen = new Set<string>();
-  for (const model of apiModels) {
-    if (model) seen.add(model);
-  }
-  if (configModels) {
-    for (const model of configModels) {
-      if (model) seen.add(model);
-    }
-  }
-  return Array.from(seen).sort((a, b) => a.localeCompare(b));
-}
-
+/**
+ * Fetches available models from Mistral API.
+ */
 async function fetchModelsFromApi(): Promise<string[] | null> {
   if (typeof fetch !== "function") return null;
   const apiKey = getMistralApiKey();
   if (!apiKey) return null;
+
   const controller = new AbortController();
   const timeoutMs = Number(process.env.CODEXUI_MODEL_FETCH_TIMEOUT_MS || 5000);
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
     const resp = await fetch("https://api.mistral.ai/v1/models", {
       method: "GET",
-      headers: {
-        Authorization: `Bearer ${apiKey}`
-      },
+      headers: { Authorization: `Bearer ${apiKey}` },
       signal: controller.signal
     });
     if (!resp.ok) {
@@ -62,11 +58,11 @@ async function fetchModelsFromApi(): Promise<string[] | null> {
     }
     const payload = (await resp.json()) as ModelResponse;
     if (!payload || !Array.isArray(payload.data)) return null;
+
     const seen = new Set<string>();
     for (const entry of payload.data) {
       const id = typeof entry?.id === "string" ? entry.id : null;
-      if (!id) continue;
-      seen.add(id);
+      if (id) seen.add(id);
     }
     return Array.from(seen).sort((a, b) => a.localeCompare(b));
   } catch (error) {
@@ -77,59 +73,16 @@ async function fetchModelsFromApi(): Promise<string[] | null> {
   }
 }
 
-async function getAvailableModels(): Promise<string[]> {
-  const now = Date.now();
-  if (cachedModels && now - cachedModels.fetchedAt < MODEL_CACHE_TTL_MS) {
-    return cachedModels.list;
-  }
-  if (!inflightModelFetch) {
-    inflightModelFetch = (async () => {
-      const remote = await fetchModelsFromApi();
-      const merged = mergeModels(remote && remote.length ? remote : [], vibeConfig?.models);
-      cachedModels = { list: merged, fetchedAt: Date.now() };
-      return merged;
-    })()
-      .catch(() => {
-        const merged = mergeModels([], vibeConfig?.models);
-        cachedModels = { list: merged, fetchedAt: Date.now() };
-        return merged;
-      })
-      .finally(() => {
-        inflightModelFetch = null;
-      });
-  }
-  return inflightModelFetch;
-}
+// Singleton model manager instance with Vibe config model merging
+const manager: ModelManager = createModelManager({
+  defaultModel: DEFAULT_MISTRAL_MODEL || null,
+  supportsEffort: false,
+  defaultEffort: null,
+  effortOptions: [],
+  fetchModels: fetchModelsFromApi,
+  configModels: vibeConfig?.models
+});
 
-export function getActiveModel(): string | null {
-  return activeModel;
-}
-
-export function updateModelSelection(selection: { model?: unknown } = {}): void {
-  const { model } = selection;
-  if ("model" in selection && typeof model !== "string") {
-    activeModel = null;
-  } else if (typeof model === "string") {
-    const requested = model.trim();
-    activeModel = requested || null;
-  }
-}
-
-export async function getModelSettings(): Promise<{
-  model: string | null;
-  defaultModel: string | null;
-  availableModels: string[];
-  effort: null;
-  defaultEffort: null;
-  effortOptions: readonly string[];
-}> {
-  const availableModels = await getAvailableModels();
-  return {
-    model: activeModel,
-    defaultModel: DEFAULT_MISTRAL_MODEL || null,
-    availableModels,
-    effort: null,
-    defaultEffort: null,
-    effortOptions: []
-  };
-}
+export const getActiveModel = manager.getActiveModel;
+export const updateModelSelection = manager.updateModelSelection;
+export const getModelSettings = manager.getModelSettings;

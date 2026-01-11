@@ -1,3 +1,11 @@
+/**
+ * Codex backend model management.
+ *
+ * Uses the shared model manager with Codex-specific configuration:
+ * - Supports reasoning effort levels (minimal, low, medium, high, xhigh)
+ * - Fetches models from ChatGPT backend API first, falls back to OpenAI API
+ * - Reads defaults from environment and ~/.codex/config.toml
+ */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,15 +14,10 @@ import {
   DEFAULT_MODEL,
   DEFAULT_EFFORT,
   EFFORT_OPTIONS,
-  MODEL_CACHE_TTL_MS,
   type ReasoningEffort
 } from "../../config.js";
 import { getCodexAuth, getAccessToken } from "../../auth.js";
-
-let activeModel: string | null = DEFAULT_MODEL;
-let activeEffort: ReasoningEffort | null = DEFAULT_EFFORT;
-let cachedModels: { list: string[]; fetchedAt: number } | null = null;
-let inflightModelFetch: Promise<string[]> | null = null;
+import { createModelManager, type ModelManager } from "../modelManager.js";
 
 interface ModelEntry {
   id?: string;
@@ -31,6 +34,10 @@ type CodexModelsResponse = {
 const CHATGPT_MODELS_ENDPOINT = "https://chatgpt.com/backend-api/codex/models";
 const OPENAI_MODELS_ENDPOINT = "https://api.openai.com/v1/models";
 
+/**
+ * Reads package.json version for ChatGPT API client_version parameter.
+ * Falls back to "0.0.0" if package.json is missing or malformed.
+ */
 function getClientVersion(): string {
   try {
     const currentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -40,26 +47,26 @@ function getClientVersion(): string {
     if (typeof parsed?.version === "string" && parsed.version.trim()) {
       return parsed.version.trim();
     }
-    console.debug(
-      'getClientVersion: package.json does not contain a valid "version" field, falling back to "0.0.0".'
-    );
-  } catch (error) {
-    console.debug(
-      'getClientVersion: failed to read or parse package.json, falling back to "0.0.0".',
-      error instanceof Error ? error.message : error
-    );
+  } catch {
+    // Silently fall back - version is optional for API calls
   }
   return "0.0.0";
 }
 
+/**
+ * Fetches models from ChatGPT backend using Codex CLI auth tokens.
+ * This is the preferred source as it returns models the user actually has access to.
+ */
 async function fetchModelsFromChatgpt(): Promise<string[] | null> {
   if (typeof fetch !== "function") return null;
   const { token, accountId } = getCodexAuth();
   if (!token) return null;
+
   const controller = new AbortController();
   const timeoutMs = Number(process.env.CODEXUI_MODEL_FETCH_TIMEOUT_MS || 5000);
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const clientVersion = getClientVersion();
+
   try {
     const url = new URL(CHATGPT_MODELS_ENDPOINT);
     if (clientVersion !== "0.0.0") {
@@ -81,6 +88,8 @@ async function fetchModelsFromChatgpt(): Promise<string[] | null> {
     }
     const payload = (await resp.json()) as CodexModelsResponse;
     if (!payload || !Array.isArray(payload.models)) return null;
+
+    // Model entries may have slug, model, or id fields - prefer slug
     const seen = new Set<string>();
     for (const entry of payload.models) {
       const id =
@@ -91,8 +100,7 @@ async function fetchModelsFromChatgpt(): Promise<string[] | null> {
             : typeof entry?.id === "string"
               ? entry.id
               : null;
-      if (!id) continue;
-      seen.add(id);
+      if (id) seen.add(id);
     }
     return Array.from(seen).sort((a, b) => a.localeCompare(b));
   } catch (error) {
@@ -103,19 +111,23 @@ async function fetchModelsFromChatgpt(): Promise<string[] | null> {
   }
 }
 
+/**
+ * Fallback: fetches models from OpenAI API using API key.
+ * Filters out fine-tuned (ft:) and deprecated models.
+ */
 async function fetchModelsFromApi(): Promise<string[] | null> {
   if (typeof fetch !== "function") return null;
   const token = getAccessToken();
   if (!token) return null;
+
   const controller = new AbortController();
   const timeoutMs = Number(process.env.CODEXUI_MODEL_FETCH_TIMEOUT_MS || 5000);
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
     const resp = await fetch(OPENAI_MODELS_ENDPOINT, {
       method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`
-      },
+      headers: { Authorization: `Bearer ${token}` },
       signal: controller.signal
     });
     if (!resp.ok) {
@@ -123,11 +135,12 @@ async function fetchModelsFromApi(): Promise<string[] | null> {
     }
     const payload = (await resp.json()) as ModelResponse;
     if (!payload || !Array.isArray(payload.data)) return null;
+
     const seen = new Set<string>();
     for (const entry of payload.data) {
       const id = typeof entry?.id === "string" ? entry.id : null;
       if (!id) continue;
-      if (id.startsWith("ft:")) continue;
+      if (id.startsWith("ft:")) continue; // Skip fine-tuned models
       if (id.includes("deprecated")) continue;
       seen.add(id);
     }
@@ -140,75 +153,32 @@ async function fetchModelsFromApi(): Promise<string[] | null> {
   }
 }
 
-export async function getAvailableModels(): Promise<string[]> {
-  const now = Date.now();
-  if (cachedModels && now - cachedModels.fetchedAt < MODEL_CACHE_TTL_MS) {
-    return cachedModels.list;
-  }
-  if (!inflightModelFetch) {
-    inflightModelFetch = (async () => {
-      const remote = (await fetchModelsFromChatgpt()) || (await fetchModelsFromApi());
-      const models: string[] = remote && remote.length ? remote : [];
-      cachedModels = { list: models, fetchedAt: Date.now() };
-      return models;
-    })()
-      .catch(() => {
-        cachedModels = { list: [], fetchedAt: Date.now() };
-        return [];
-      })
-      .finally(() => {
-        inflightModelFetch = null;
-      });
-  }
-  return inflightModelFetch;
+/**
+ * Combined fetch strategy: try ChatGPT backend first, fall back to OpenAI API.
+ */
+async function fetchModels(): Promise<string[] | null> {
+  return (await fetchModelsFromChatgpt()) || (await fetchModelsFromApi());
 }
 
-export function getActiveModel(): string | null {
-  return activeModel;
-}
+// Singleton model manager instance
+const manager: ModelManager = createModelManager({
+  defaultModel: DEFAULT_MODEL,
+  supportsEffort: true,
+  defaultEffort: DEFAULT_EFFORT,
+  effortOptions: EFFORT_OPTIONS,
+  fetchModels
+});
 
+export const getActiveModel = manager.getActiveModel;
+export const updateModelSelection = manager.updateModelSelection;
+export const getModelSettings = manager.getModelSettings;
+
+// Re-export effort getter with proper typing for Codex SDK integration
 export function getActiveEffort(): ReasoningEffort | null {
-  return activeEffort;
+  return manager.getActiveEffort() as ReasoningEffort | null;
 }
 
-interface ModelSelection {
-  model?: unknown;
-  effort?: unknown;
-}
-
-export function updateModelSelection(selection: ModelSelection = {}): void {
-  const { model, effort } = selection;
-  if ("model" in selection && typeof model !== "string") {
-    activeModel = null;
-  } else if (typeof model === "string") {
-    const requested = model.trim();
-    activeModel = requested || null;
-  }
-  if (effort === null || effort === "") {
-    activeEffort = null;
-  } else if (typeof effort === "string") {
-    const normalized = effort.trim().toLowerCase();
-    if ((EFFORT_OPTIONS as readonly string[]).includes(normalized)) {
-      activeEffort = normalized as ReasoningEffort;
-    }
-  }
-}
-
-export async function getModelSettings(): Promise<{
-  model: string | null;
-  defaultModel: string | null;
-  availableModels: string[];
-  effort: ReasoningEffort | null;
-  defaultEffort: ReasoningEffort | null;
-  effortOptions: readonly ReasoningEffort[];
-}> {
-  const models = await getAvailableModels();
-  return {
-    model: activeModel,
-    defaultModel: DEFAULT_MODEL,
-    availableModels: models,
-    effort: activeEffort,
-    defaultEffort: DEFAULT_EFFORT,
-    effortOptions: EFFORT_OPTIONS
-  };
+// For backwards compatibility with existing tests
+export async function getAvailableModels(): Promise<string[]> {
+  return (await manager.getModelSettings()).availableModels;
 }

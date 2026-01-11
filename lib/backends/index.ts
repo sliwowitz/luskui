@@ -1,3 +1,17 @@
+/**
+ * Backend factory module.
+ *
+ * Implements the Strategy pattern for pluggable AI backends.
+ * Each backend translates its provider's streaming API into a normalized
+ * event stream (BackendEvent) that the server can render uniformly.
+ *
+ * Available backends:
+ * - codex: OpenAI Codex SDK (default) - uses ChatGPT/OpenAI authentication
+ * - claude: Anthropic Claude API - uses Claude CLI OAuth or API key
+ * - mistral: Mistral AI API - uses Mistral API key
+ *
+ * Selection is via CODEXUI_BACKEND environment variable.
+ */
 import { createClaudeBackend } from "./claude/index.js";
 import { createCodexBackend } from "./codex/index.js";
 import { createMistralBackend } from "./mistral/index.js";
@@ -5,6 +19,14 @@ import type { Backend, BackendConfig } from "./types.js";
 
 export type BackendId = "codex" | "claude" | "mistral";
 
+/**
+ * Create a backend instance based on CODEXUI_BACKEND environment variable.
+ * Defaults to "codex" if not specified.
+ *
+ * @param config - Backend configuration (working directory, sandbox mode, etc.)
+ * @returns Configured backend implementing the Backend interface
+ * @throws Error if CODEXUI_BACKEND specifies an unknown backend
+ */
 export function getBackend(config: BackendConfig): Backend {
   const requested = (process.env.CODEXUI_BACKEND || "codex").toLowerCase();
   switch (requested) {

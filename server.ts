@@ -1,18 +1,21 @@
+/**
+ * Main server entry point for the Codex UI.
+ *
+ * This Express server provides:
+ * - REST API for creating runs and managing model settings
+ * - SSE streaming for real-time AI response events
+ * - File browsing/editing endpoints (delegated to fileRoutes)
+ * - Static file serving for the web UI
+ *
+ * Designed to run in an isolated container with full access to /workspace.
+ * All operations are single-user and single-backend per container instance.
+ */
 import express, { Request, Response } from "express";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import crypto from "node:crypto";
 
 import { hydrateEnv } from "./lib/env.js";
-import {
-  REPO_ROOT,
-  HOST,
-  PORT,
-  REPO_ROOT_ABS,
-  SKIP_GIT_REPO_CHECK,
-  resolveRepoPath
-} from "./lib/config.js";
+import { REPO_ROOT, HOST, PORT, SKIP_GIT_REPO_CHECK } from "./lib/config.js";
 import { logRun } from "./lib/logging.js";
 import {
   createRun,
@@ -23,17 +26,22 @@ import {
   getCommands
 } from "./lib/runStore.js";
 import { getBackend } from "./lib/backends/index.js";
+import { fileRouter } from "./lib/fileRoutes.js";
 import type { BackendEvent, ModelSelectionPayload } from "./lib/backends/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const staticDir = path.join(__dirname, "static");
 
+// Load environment variables from .env files and Claude credentials
 hydrateEnv();
 
 const app = express();
 app.use(express.json());
 app.use("/static", express.static(staticDir));
+
+// Initialize the backend (Codex, Claude, or Mistral based on CODEXUI_BACKEND env)
+// Configuration is fixed for container context: full access, no approval needed
 const backend = getBackend({
   workingDirectory: REPO_ROOT,
   skipGitRepoCheck: SKIP_GIT_REPO_CHECK,
@@ -42,8 +50,16 @@ const backend = getBackend({
   approvalPolicy: "never"
 });
 
+// Mount file operations router
+app.use("/api", fileRouter);
+
+// Redirect root to UI
 app.get("/", (_req: Request, res: Response) => res.redirect("/static/index.html"));
 
+/**
+ * Create a new run with the given prompt.
+ * Returns a UUID that can be used to stream results.
+ */
 app.post("/api/send", async (req: Request, res: Response) => {
   const body = req.body as { text?: unknown };
   const prompt = String(body?.text ?? "");
@@ -54,11 +70,24 @@ app.post("/api/send", async (req: Request, res: Response) => {
   res.json({ runId });
 });
 
+/**
+ * Stream run results via Server-Sent Events.
+ *
+ * Events emitted:
+ * - thinking: Model's internal reasoning (if available)
+ * - message: Text response chunks
+ * - tool.start/stdout/stderr/end: Command execution tracking
+ * - diff: Unified patch for file changes
+ * - status: Progress updates
+ * - done: Completion signal
+ * - error: Error message if run fails
+ */
 app.get("/api/stream/:id", async (req: Request, res: Response) => {
   const id = req.params.id;
   const run = getRun(id);
   if (!run) return res.status(404).json({ error: "no such run" });
 
+  // Set up SSE headers
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.flushHeaders?.();
@@ -76,6 +105,10 @@ app.get("/api/stream/:id", async (req: Request, res: Response) => {
     }
   });
 
+  /**
+   * Translates backend events to SSE messages.
+   * Also maintains run state (command logs, last diff).
+   */
   const handleBackendEvent = (event: BackendEvent): void => {
     switch (event.type) {
       case "tool.start":
@@ -123,6 +156,7 @@ app.get("/api/stream/:id", async (req: Request, res: Response) => {
   }
 });
 
+// Run state accessors
 app.get("/api/last-diff/:id", (req: Request, res: Response) => {
   res.json({ diff: getLastDiff(req.params.id) });
 });
@@ -130,6 +164,7 @@ app.get("/api/cmd-log/:id", (req: Request, res: Response) => {
   res.json({ commands: getCommands(req.params.id) });
 });
 
+// Model settings
 app.get("/api/model", async (_req: Request, res: Response) => {
   res.json(await backend.getModelSettings());
 });
@@ -144,92 +179,6 @@ app.post("/api/model", async (req: Request, res: Response) => {
     defaultEffort: settings.defaultEffort || "(none)"
   });
   res.json(settings);
-});
-
-app.post("/api/apply/:id", async (req: Request, res: Response) => {
-  const patch = getLastDiff(req.params.id);
-  if (!patch) return res.json({ ok: false, output: "No diff available" });
-
-  const tmp = path.join(REPO_ROOT, `.codexui-${crypto.randomUUID()}.patch`);
-  try {
-    fs.writeFileSync(tmp, patch, "utf8");
-    const { spawn } = await import("node:child_process");
-    const p = spawn("bash", ["-lc", `git apply --index '${tmp.replace(/'/g, "'\\''")}'`], {
-      cwd: REPO_ROOT
-    });
-    let out = "";
-    p.stdout.on("data", (d) => (out += d.toString()));
-    p.stderr.on("data", (d) => (out += d.toString()));
-    p.on("close", (code) => {
-      try {
-        fs.unlinkSync(tmp);
-      } catch {
-        // ignore
-      }
-      res.json({ ok: code === 0, output: out });
-    });
-  } catch (e) {
-    try {
-      fs.unlinkSync(tmp);
-    } catch {
-      // ignore
-    }
-    res.json({ ok: false, output: String(e) });
-  }
-});
-
-app.get("/api/list", (req: Request, res: Response) => {
-  const requestedPath = typeof req.query.path === "string" ? req.query.path : "";
-  try {
-    const { abs, rel } = resolveRepoPath(requestedPath);
-    const entries = fs
-      .readdirSync(abs, { withFileTypes: true })
-      .sort((a, b) => {
-        if (a.isDirectory() && !b.isDirectory()) return -1;
-        if (!a.isDirectory() && b.isDirectory()) return 1;
-        return a.name.localeCompare(b.name);
-      })
-      .map((dirent) => ({ name: dirent.name, dir: dirent.isDirectory() }));
-
-    res.json({ root: REPO_ROOT_ABS, path: rel, entries });
-  } catch (error) {
-    res.json({ root: REPO_ROOT_ABS, path: requestedPath, entries: [], error: String(error) });
-  }
-});
-
-app.get("/api/read", (req: Request, res: Response) => {
-  const requestedPath = req.query.path;
-  if (typeof requestedPath !== "string" || !requestedPath) {
-    return res.status(400).json({ error: "path is required" });
-  }
-  try {
-    const { abs, rel } = resolveRepoPath(requestedPath);
-    const stat = fs.statSync(abs);
-    if (stat.isDirectory()) {
-      return res.status(400).json({ error: "Path is a directory" });
-    }
-    const content = fs.readFileSync(abs, "utf8");
-    res.json({ path: rel, content });
-  } catch (error) {
-    res.status(400).json({ error: String(error) });
-  }
-});
-
-app.post("/api/save", (req: Request, res: Response) => {
-  const body = req.body as { path?: unknown; content?: unknown };
-  const relPath = body?.path;
-  if (typeof relPath !== "string" || !relPath) {
-    return res.status(400).json({ ok: false, error: "path is required" });
-  }
-  const content = typeof body?.content === "string" ? body.content : "";
-  try {
-    const { abs, rel } = resolveRepoPath(relPath);
-    fs.mkdirSync(path.dirname(abs), { recursive: true });
-    fs.writeFileSync(abs, content, "utf8");
-    res.json({ ok: true, path: rel });
-  } catch (error) {
-    res.status(400).json({ ok: false, error: String(error) });
-  }
 });
 
 app.listen(PORT, HOST, () =>
