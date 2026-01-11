@@ -142,11 +142,34 @@ function loadClaudeCredentials(filePath: string): void {
       "ANTHROPIC_API_KEY",
       "anthropic_api_key",
       "CLAUDE_API_KEY",
-      "claude_api_key"
+      "claude_api_key",
+      "api_key",
+      "raw_key",
+      "apiKey",
+      "rawKey"
     ]);
+    const nestedKey =
+      parsed && typeof parsed === "object"
+        ? (extractClaudeApiKey((parsed as Record<string, unknown>).claudeAiOauth, [
+            "api_key",
+            "raw_key",
+            "apiKey",
+            "rawKey"
+          ]) ??
+          extractClaudeApiKey((parsed as Record<string, unknown>).oauth, [
+            "api_key",
+            "raw_key",
+            "apiKey",
+            "rawKey"
+          ]))
+        : null;
     if (key) {
       setIfMissing("ANTHROPIC_API_KEY", key);
       setIfMissing("CLAUDE_API_KEY", key);
+    }
+    if (!key && nestedKey) {
+      setIfMissing("ANTHROPIC_API_KEY", nestedKey);
+      setIfMissing("CLAUDE_API_KEY", nestedKey);
     }
     const oauthToken = extractClaudeOauthToken(parsed);
     if (oauthToken) {
@@ -168,6 +191,7 @@ export function hydrateEnv(): void {
   if (vibeConfigDir) loadEnvFile(path.join(vibeConfigDir, ".env"));
   if (home) {
     loadClaudeCredentials(path.join(home, ".claude", ".credentials.json"));
+    loadClaudeCredentials(path.join(home, ".claude", "credentials.json"));
   }
 }
 
