@@ -82,6 +82,48 @@ test("effort handling when supportsEffort is true", async () => {
   assert.equal(manager.getActiveEffort(), null);
 });
 
+test("effort cleared when non-string values are passed", async () => {
+  const manager = createModelManager({
+    defaultModel: null,
+    supportsEffort: true,
+    defaultEffort: "medium",
+    effortOptions: ["low", "medium", "high"],
+    fetchModels: async () => null
+  });
+
+  // Set initial effort
+  manager.updateModelSelection({ effort: "high" });
+  assert.equal(manager.getActiveEffort(), "high");
+
+  // Null clears effort
+  manager.updateModelSelection({ effort: null });
+  assert.equal(manager.getActiveEffort(), null);
+
+  // Set effort again
+  manager.updateModelSelection({ effort: "low" });
+  assert.equal(manager.getActiveEffort(), "low");
+
+  // Number clears effort
+  manager.updateModelSelection({ effort: 123 as any });
+  assert.equal(manager.getActiveEffort(), null);
+
+  // Set effort again
+  manager.updateModelSelection({ effort: "medium" });
+  assert.equal(manager.getActiveEffort(), "medium");
+
+  // Boolean clears effort
+  manager.updateModelSelection({ effort: true as any });
+  assert.equal(manager.getActiveEffort(), null);
+
+  // Set effort again
+  manager.updateModelSelection({ effort: "high" });
+  assert.equal(manager.getActiveEffort(), "high");
+
+  // Object clears effort
+  manager.updateModelSelection({ effort: {} as any });
+  assert.equal(manager.getActiveEffort(), null);
+});
+
 test("effort is ignored when supportsEffort is false", async () => {
   const manager = createModelManager({
     defaultModel: null,

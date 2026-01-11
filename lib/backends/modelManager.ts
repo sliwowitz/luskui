@@ -111,11 +111,13 @@ export function createModelManager(config: ModelManagerConfig): ModelManager {
 
     // Handle effort update (only if backend supports it)
     if (config.supportsEffort) {
-      if (effort === null || effort === "") {
+      if ("effort" in payload && typeof effort !== "string") {
         activeEffort = null;
       } else if (typeof effort === "string") {
         const normalized = effort.trim().toLowerCase();
-        if ((config.effortOptions as readonly string[]).includes(normalized)) {
+        if (normalized === "") {
+          activeEffort = null;
+        } else if ((config.effortOptions as readonly string[]).includes(normalized)) {
           activeEffort = normalized;
         }
         // Invalid effort values are silently ignored, preserving current selection
