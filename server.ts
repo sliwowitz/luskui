@@ -182,5 +182,5 @@ app.post("/api/model", async (req: Request, res: Response) => {
 });
 
 app.listen(PORT, HOST, () =>
-  console.log(`Agent UI (SDK streaming) on http://${HOST}:${PORT} — repo ${REPO_ROOT}`)
+  console.log(`LuskUI started (SDK streaming) on http://${HOST}:${PORT} — repo ${REPO_ROOT}`)
 );
