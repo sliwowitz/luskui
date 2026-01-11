@@ -1,5 +1,5 @@
 /**
- * Main server entry point for the Codex UI.
+ * Main server entry point for LuskUI.
  *
  * This Express server provides:
  * - REST API for creating runs and managing model settings
@@ -40,7 +40,7 @@ const app = express();
 app.use(express.json());
 app.use("/static", express.static(staticDir));
 
-// Initialize the backend (Codex, Claude, or Mistral based on CODEXUI_BACKEND env)
+// Initialize the backend (Codex, Claude, or Mistral based on LUSKUI_BACKEND env)
 // Configuration is fixed for container context: full access, no approval needed
 const backend = getBackend({
   workingDirectory: REPO_ROOT,
