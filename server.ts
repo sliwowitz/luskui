@@ -179,6 +179,11 @@ app.get("/api/cmd-log/:id", (req: Request, res: Response) => {
   res.json({ commands: getCommands(req.params.id) });
 });
 
+// Backend info (for client to show appropriate warnings)
+app.get("/api/info", (_req: Request, res: Response) => {
+  res.json({ backend: backend.name });
+});
+
 // Model settings
 app.get("/api/model", async (_req: Request, res: Response) => {
   res.json(await backend.getModelSettings());

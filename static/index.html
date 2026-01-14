@@ -220,14 +220,48 @@
     .cmd-start{background:var(--cmd-start-bg);border-color:var(--cmd-start-border)}
     .cmd-output{background:var(--cmd-output-bg);border-color:var(--cmd-output-border)}
     .cmd-meta{background:var(--cmd-meta-bg);color:var(--muted)}
+    .warning-banner{
+      padding:10px 12px;
+      font-size:13px;
+      line-height:1.4;
+      border-bottom:1px solid var(--border);
+    }
+    .warning-banner a{color:inherit}
+    .warning-banner.warning-red{
+      background:#fee2e2;
+      color:#991b1b;
+      border-bottom-color:#fca5a5;
+    }
+    :root[data-theme="dark"] .warning-banner.warning-red,
+    :root:not([data-theme]) .warning-banner.warning-red{
+      background:rgba(220,38,38,0.2);
+      color:#fca5a5;
+      border-bottom-color:rgba(220,38,38,0.4);
+    }
+    @media (prefers-color-scheme:dark){
+      :root:not([data-theme]) .warning-banner.warning-red{
+        background:rgba(220,38,38,0.2);
+        color:#fca5a5;
+        border-bottom-color:rgba(220,38,38,0.4);
+      }
+    }
+    .experimental-notice{
+      font-size:12px;
+      color:var(--muted);
+      padding:6px 0;
+      margin-bottom:4px;
+      line-height:1.4;
+    }
   </style>
 </head>
 <body>
   <div id="files">
+    <div class="experimental-notice">LuskUI is experimental and not fully-featured. Expect things not to work.</div>
     <div><strong>Repo</strong></div>
     <div id="tree"></div>
   </div>
   <div id="main">
+    <div id="backendWarning" class="warning-banner warning-red" style="display:none"></div>
     <div id="toolbar">
       <button id="themeToggle" type="button">Theme: Auto</button>
       <button id="applyDiffButton" onclick="applyDiff()">Apply Last Diff</button>
@@ -587,6 +621,25 @@
     });
 
     loadSettings();
+
+    // Load backend info and show appropriate warnings
+    async function loadBackendInfo(){
+      try {
+        const data = await fetch('/api/info').then(r=>r.json());
+        const backendName = (data.backend || '').toLowerCase();
+        const warningEl = document.getElementById('backendWarning');
+        if (backendName === 'claude') {
+          warningEl.innerHTML = 'Claude auth sharing is not supported, prefer the CLI client for Claude, see <a href="https://github.com/sliwowitz/luskui/issues/42" target="_blank">issue #42</a>';
+          warningEl.style.display = 'block';
+        } else if (backendName === 'mistral') {
+          warningEl.innerHTML = 'The devstral-2 model is not supported. Most other models cannot run commands, codestral-latest seems to work but feels flaky, see <a href="https://github.com/sliwowitz/luskui/issues/43" target="_blank">issue #43</a>';
+          warningEl.style.display = 'block';
+        }
+      } catch (error) {
+        console.error('Failed to load backend info', error);
+      }
+    }
+    loadBackendInfo();
   </script>
 </body>
 </html>
