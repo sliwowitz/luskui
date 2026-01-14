@@ -238,13 +238,6 @@
       color:#fca5a5;
       border-bottom-color:rgba(220,38,38,0.4);
     }
-    @media (prefers-color-scheme:dark){
-      :root:not([data-theme]) .warning-banner.warning-red{
-        background:rgba(220,38,38,0.2);
-        color:#fca5a5;
-        border-bottom-color:rgba(220,38,38,0.4);
-      }
-    }
     .experimental-notice{
       font-size:12px;
       color:var(--muted);
@@ -629,10 +622,34 @@
         const backendName = (data.backend || '').toLowerCase();
         const warningEl = document.getElementById('backendWarning');
         if (backendName === 'claude') {
-          warningEl.innerHTML = 'Claude auth sharing is not supported, prefer the CLI client for Claude, see <a href="https://github.com/sliwowitz/luskui/issues/42" target="_blank">issue #42</a>';
+          // Clear any existing content
+          warningEl.textContent = '';
+          // Add text before link
+          warningEl.appendChild(document.createTextNode(
+            'Claude auth sharing is not supported, prefer the CLI client for Claude, see '
+          ));
+          // Create and append link
+          const link42 = document.createElement('a');
+          link42.href = 'https://github.com/sliwowitz/luskui/issues/42';
+          link42.target = '_blank';
+          link42.rel = 'noopener noreferrer';
+          link42.textContent = 'issue #42';
+          warningEl.appendChild(link42);
           warningEl.style.display = 'block';
         } else if (backendName === 'mistral') {
-          warningEl.innerHTML = 'The devstral-2 model is not supported. Most other models cannot run commands, codestral-latest seems to work but feels flaky, see <a href="https://github.com/sliwowitz/luskui/issues/43" target="_blank">issue #43</a>';
+          // Clear any existing content
+          warningEl.textContent = '';
+          // Add text before link
+          warningEl.appendChild(document.createTextNode(
+            'The devstral-2 model is not supported. Most other models cannot run commands, codestral-latest seems to work but feels flaky, see '
+          ));
+          // Create and append link
+          const link43 = document.createElement('a');
+          link43.href = 'https://github.com/sliwowitz/luskui/issues/43';
+          link43.target = '_blank';
+          link43.rel = 'noopener noreferrer';
+          link43.textContent = 'issue #43';
+          warningEl.appendChild(link43);
           warningEl.style.display = 'block';
         }
       } catch (error) {
